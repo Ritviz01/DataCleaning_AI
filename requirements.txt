@@ -4,3 +4,4 @@ polars
 pyarrow
 duckdb
 python-multipart
+chardet
