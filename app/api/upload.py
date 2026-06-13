@@ -17,6 +17,8 @@ from app.services.column_cleaner import clean_column_names
 from app.services.recommendation_engine import generate_recommendations
 # Type inference engine
 from app.services.type_inference_engine import infer_better_types
+# Auto Cleaner
+from app.services.auto_cleaner import auto_clean_dataset
 
 
 
@@ -58,14 +60,32 @@ async def upload_file(file: UploadFile = File(...)):
     # Calculate quality score
     quality = calculate_quality_score(issues)
 
+    # Infer better data types
+    type_suggestions = infer_better_types(df)
+
     # Generate cleaning recommendations
     recommendations = generate_recommendations(
         issues,
-        schema
+        schema,
+        type_suggestions
     )
 
-    # Infer better data types
-    type_suggestions = infer_better_types(df)
+    # Apply cleaning actions
+    cleaned_df, cleaning_log = auto_clean_dataset(
+        df,
+        recommendations
+    )
+    # Profile after cleaning
+    cleaned_profile = profile_dataset(cleaned_df)
+
+    # Detect issues after cleaning
+    cleaned_issues = detect_issues(cleaned_df)
+
+    # Quality score after cleaning
+    cleaned_quality = calculate_quality_score(
+        cleaned_issues
+    )
+
 
     return {
     "filename": file.filename,
@@ -76,6 +96,12 @@ async def upload_file(file: UploadFile = File(...)):
     "quality": quality,
     "issues": issues,
     "recommendations": recommendations,
-    "type_suggestions": type_suggestions
-
+    "type_suggestions": type_suggestions,
+    "cleaning_log": cleaning_log,
+    
+    "after_cleaning": {
+        "profile": cleaned_profile,
+        "issues": cleaned_issues,
+        "quality": cleaned_quality
+    }
 }

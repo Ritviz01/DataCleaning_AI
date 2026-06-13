@@ -6,13 +6,16 @@ def detect_issues(df):
     # Dataset ki total rows
     total_rows = df.height
 
-    # Har column ko check karo
+    # -----------------------------------
+    # Missing Values Detection
+    # -----------------------------------
+
     for column in df.columns:
 
-        # Is column mein kitne null values hain
+        # Count null values
         null_count = df[column].null_count()
 
-        # Agar null values hain toh issue add karo
+        # Agar null values hain
         if null_count > 0:
 
             issues.append({
@@ -26,17 +29,63 @@ def detect_issues(df):
                 "severity": "medium"
             })
 
-    # Duplicate rows detect karo
-    duplicate_rows = total_rows - df.unique().height
+    # -----------------------------------
+    # Duplicate Row Detection
+    # -----------------------------------
 
-    # Agar duplicate rows mili
+    # Unique rows count compare karo
+    duplicate_rows = (
+        total_rows -
+        df.unique().height
+    )
+
+    # Agar duplicate rows hain
     if duplicate_rows > 0:
 
         issues.append({
             "column": "ALL",
             "issue_type": "duplicate_rows",
-            "count": duplicate_rows,
+            "count": int(duplicate_rows),
             "severity": "high"
         })
+
+    # -----------------------------------
+    # Duplicate ID Detection
+    # -----------------------------------
+
+    for column in df.columns:
+
+        # Sirf ID-like columns check karo
+        if "id" in column.lower():
+
+            # Null hata ke count lo
+            total_ids = (
+                df[column]
+                .drop_nulls()
+                .len()
+            )
+
+            # Unique IDs count
+            unique_ids = (
+                df[column]
+                .drop_nulls()
+                .n_unique()
+            )
+
+            # Duplicate IDs count
+            duplicate_ids = (
+                total_ids -
+                unique_ids
+            )
+
+            # Agar duplicate IDs hain
+            if duplicate_ids > 0:
+
+                issues.append({
+                    "column": column,
+                    "issue_type": "duplicate_ids",
+                    "count": int(duplicate_ids),
+                    "severity": "high"
+                })
 
     return issues
