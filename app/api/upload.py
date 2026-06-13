@@ -45,6 +45,21 @@ async def upload_file(file: UploadFile = File(...)):
     # Clean column names
     df = clean_column_names(df)
 
+    # DEBUG
+    print("\n===== DATASET HEAD =====")
+    print(df.head(10))
+
+    print("\n===== SCHEMA =====")
+    print(df.schema)
+
+    if "Enrollment_Date" in df.columns:
+        print("\n===== ENROLLMENT DATE SAMPLE =====")
+        print(df["Enrollment_Date"].head(20))
+
+    if "First_Name" in df.columns:
+        print("\n===== FIRST NAME SAMPLE =====")
+        print(df["First_Name"].head(20))
+
     # Generate metadata
     metadata = generate_metadata(df)
 

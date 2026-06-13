@@ -1,3 +1,9 @@
+from app.services.validators import (
+    is_valid_email,
+    is_valid_date
+)
+
+
 def detect_issues(df):
 
     # Saare detected issues yahan store honge
@@ -12,10 +18,8 @@ def detect_issues(df):
 
     for column in df.columns:
 
-        # Count null values
         null_count = df[column].null_count()
 
-        # Agar null values hain
         if null_count > 0:
 
             issues.append({
@@ -33,13 +37,11 @@ def detect_issues(df):
     # Duplicate Row Detection
     # -----------------------------------
 
-    # Unique rows count compare karo
     duplicate_rows = (
         total_rows -
         df.unique().height
     )
 
-    # Agar duplicate rows hain
     if duplicate_rows > 0:
 
         issues.append({
@@ -55,36 +57,93 @@ def detect_issues(df):
 
     for column in df.columns:
 
-        # Sirf ID-like columns check karo
         if "id" in column.lower():
 
-            # Null hata ke count lo
             total_ids = (
                 df[column]
                 .drop_nulls()
                 .len()
             )
 
-            # Unique IDs count
             unique_ids = (
                 df[column]
                 .drop_nulls()
                 .n_unique()
             )
 
-            # Duplicate IDs count
             duplicate_ids = (
                 total_ids -
                 unique_ids
             )
 
-            # Agar duplicate IDs hain
             if duplicate_ids > 0:
 
                 issues.append({
                     "column": column,
                     "issue_type": "duplicate_ids",
                     "count": int(duplicate_ids),
+                    "severity": "high"
+                })
+
+    # -----------------------------------
+    # Invalid Email Detection
+    # -----------------------------------
+
+    for column in df.columns:
+
+        if "email" in column.lower():
+
+            invalid_count = 0
+
+            for value in df[column]:
+
+                if value is None:
+                    continue
+
+                if not is_valid_email(value):
+                    print(
+                        'Invalid Email Found:',
+                        repr(value)
+                    )
+                    invalid_count += 1
+
+            if invalid_count > 0:
+
+                issues.append({
+                    "column": column,
+                    "issue_type": "invalid_email",
+                    "count": invalid_count,
+                    "severity": "high"
+                })
+
+    # -----------------------------------
+    # Invalid Date Detection
+    # -----------------------------------
+
+    for column in df.columns:
+
+        if (
+            "date" in column.lower()
+            or "dob" in column.lower()
+        ):
+
+            invalid_count = 0
+
+            for value in df[column]:
+
+                if value is None:
+                    continue
+
+                if not is_valid_date(value):
+                    print('Invalid Date Found:', repr(value))
+                    invalid_count += 1
+
+            if invalid_count > 0:
+
+                issues.append({
+                    "column": column,
+                    "issue_type": "invalid_date",
+                    "count": invalid_count,
                     "severity": "high"
                 })
 
