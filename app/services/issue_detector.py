@@ -2,7 +2,9 @@ from app.services.validators import (
     is_valid_email,
     is_valid_date
 )
-
+from app.services.outlier_detector import (
+    detect_outliers
+)
 
 def detect_issues(df):
 
@@ -146,5 +148,15 @@ def detect_issues(df):
                     "count": invalid_count,
                     "severity": "high"
                 })
+
+                # -----------------------------------
+                # Outlier Detection
+                # -----------------------------------
+
+                outlier_issues = detect_outliers(df)
+
+                issues.extend(outlier_issues)
+
+                return issues
 
     return issues
