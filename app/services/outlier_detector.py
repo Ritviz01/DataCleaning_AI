@@ -1,16 +1,54 @@
 import polars as pl
 
 
+# Columns jinke liye outlier detection skip karna hai
+SKIP_OUTLIER_COLUMNS = [
+    "duration",
+    "weekly study"
+]
+
+
+def is_numeric_like(series, threshold=0.8):
+
+    try:
+
+        numeric_series = (
+            series
+            .cast(pl.String)
+            .str.replace_all(r"[^0-9.-]", "")
+            .cast(pl.Float64, strict=False)
+        )
+
+        valid_numeric = numeric_series.is_not_null().sum()
+
+        confidence = valid_numeric / len(series)
+
+        return confidence >= threshold
+
+    except Exception:
+
+        return False
+
+
 def detect_outliers(df):
 
     outlier_issues = []
 
     for column in df.columns:
 
-        if 'id' in column.lower():
+        # Skip ID columns
+        if "id" in column.lower():
+            continue
+
+        # Skip predefined columns
+        if column.lower() in SKIP_OUTLIER_COLUMNS:
             continue
 
         try:
+
+            # Sirf numeric-like columns par kaam karo
+            if not is_numeric_like(df[column]):
+                continue
 
             numeric_series = (
                 df[column]
@@ -27,6 +65,10 @@ def detect_outliers(df):
             q3 = numeric_series.quantile(0.75)
 
             iqr = q3 - q1
+
+            # Agar IQR zero hai toh skip
+            if iqr == 0:
+                continue
 
             lower_bound = q1 - (1.5 * iqr)
             upper_bound = q3 + (1.5 * iqr)
@@ -45,7 +87,7 @@ def detect_outliers(df):
             print(f"IQR: {iqr}")
             print(f"LOWER: {lower_bound}")
             print(f"UPPER: {upper_bound}")
-            print(f"OUTLIERS: {outlier_values.to_list()}")
+            print(f"OUTLIERS FOUND: {outlier_count}")
 
             if outlier_count > 0:
 

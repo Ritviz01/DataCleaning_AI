@@ -1,117 +1,267 @@
 import polars as pl
 
 
-# Apply recommendations and clean dataset
-def auto_clean_dataset(df, recommendations):
+def auto_clean_dataset(
+    df,
+    recommendations
+):
 
-    # Cleaning log maintain karenge
+    # Cleaning log
     cleaning_log = []
 
-    # Copy dataframe
-    # Original dataframe safe rahega
+    # Clone dataframe
     cleaned_df = df.clone()
 
-    # Process every recommendation
+    # ---------------------------------
+    # Currency Cleanup
+    # ---------------------------------
+
+    if (
+        "Total_Payments"
+        in cleaned_df.columns
+    ):
+
+        try:
+
+            cleaned_df = (
+                cleaned_df
+                .with_columns(
+
+                    pl.col(
+                        "Total_Payments"
+                    )
+
+                    .str.replace_all(
+                        r"[^0-9.]",
+                        ""
+                    )
+
+                    .cast(
+                        pl.Float64,
+                        strict=False
+                    )
+
+                    .alias(
+                        "Total_Payments"
+                    )
+                )
+            )
+
+            cleaning_log.append({
+
+                "column":
+                    "Total_Payments",
+
+                "action":
+                    "currency_cleanup"
+
+            })
+
+        except Exception:
+
+            pass
+
+    # ---------------------------------
+    # Process Recommendations
+    # ---------------------------------
+
     for recommendation in recommendations:
 
-        column = recommendation["column"]
+        column = (
+            recommendation[
+                "column"
+            ]
+        )
 
-        action = recommendation["recommended_action"]
+        action = (
+            recommendation[
+                "recommended_action"
+            ]
+        )
 
-        # Skip if column not found
-        if column not in cleaned_df.columns:
+        # Column exists?
+        if (
+            column
+            not in cleaned_df.columns
+        ):
             continue
 
-        # -----------------------------
-        # Median Imputation
-        # -----------------------------
+        # ---------------------------------
+        # MEDIAN IMPUTATION
+        # ---------------------------------
 
-        if action == "median_imputation":
+        if (
+            action
+            ==
+            "median_imputation"
+        ):
 
             try:
 
-                # Convert column to numeric
                 numeric_series = (
+
                     cleaned_df[column]
-                    .cast(pl.Float64, strict=False)
+
+                    .cast(
+                        pl.Float64,
+                        strict=False
+                    )
+
                 )
 
-                # Calculate median
-                median_value = numeric_series.median()
+                median_value = (
+                    numeric_series
+                    .median()
+                )
 
-                # Fill missing values
-                cleaned_df = cleaned_df.with_columns(
-                    pl.col(column)
-                    .cast(pl.Float64, strict=False)
-                    .fill_null(median_value)
-                    .alias(column)
+                cleaned_df = (
+                    cleaned_df
+                    .with_columns(
+
+                        pl.col(column)
+
+                        .cast(
+                            pl.Float64,
+                            strict=False
+                        )
+
+                        .fill_null(
+                            median_value
+                        )
+
+                        .alias(
+                            column
+                        )
+
+                    )
                 )
 
                 cleaning_log.append({
-                    "column": column,
-                    "action": "median_imputation",
-                    "value_used": median_value
+
+                    "column":
+                        column,
+
+                    "action":
+                        "median_imputation",
+
+                    "value_used":
+                        median_value
+
                 })
 
             except Exception:
 
                 pass
 
-        # -----------------------------
-        # Mode Imputation
-        # -----------------------------
+        # ---------------------------------
+        # MODE IMPUTATION
+        # ---------------------------------
 
-        elif action == "mode_imputation":
+        elif (
+            action
+            ==
+            "mode_imputation"
+        ):
 
             try:
 
                 mode_value = (
+
                     cleaned_df[column]
+
                     .drop_nulls()
+
                     .mode()
+
                 )
 
-                if len(mode_value) > 0:
+                if (
+                    len(mode_value)
+                    > 0
+                ):
 
-                    mode_value = mode_value[0]
+                    mode_value = (
+                        mode_value[0]
+                    )
 
-                    cleaned_df = cleaned_df.with_columns(
-                        pl.col(column)
-                        .fill_null(mode_value)
-                        .alias(column)
+                    cleaned_df = (
+                        cleaned_df
+                        .with_columns(
+
+                            pl.col(column)
+
+                            .fill_null(
+                                mode_value
+                            )
+
+                            .alias(
+                                column
+                            )
+
+                        )
                     )
 
                     cleaning_log.append({
-                        "column": column,
-                        "action": "mode_imputation",
-                        "value_used": str(mode_value)
+
+                        "column":
+                            column,
+
+                        "action":
+                            "mode_imputation",
+
+                        "value_used":
+                            str(
+                                mode_value
+                            )
+
                     })
 
             except Exception:
 
                 pass
 
-        # -----------------------------
-        # Forward Fill
-        # -----------------------------
+        # ---------------------------------
+        # FORWARD FILL
+        # ---------------------------------
 
-        elif action == "forward_fill":
+        elif (
+            action
+            ==
+            "forward_fill"
+        ):
 
             try:
 
-                cleaned_df = cleaned_df.with_columns(
-                    pl.col(column)
-                    .forward_fill()
-                    .alias(column)
+                cleaned_df = (
+                    cleaned_df
+                    .with_columns(
+
+                        pl.col(column)
+
+                        .forward_fill()
+
+                        .alias(
+                            column
+                        )
+
+                    )
                 )
 
                 cleaning_log.append({
-                    "column": column,
-                    "action": "forward_fill"
+
+                    "column":
+                        column,
+
+                    "action":
+                        "forward_fill"
+
                 })
 
             except Exception:
 
                 pass
 
-    return cleaned_df, cleaning_log
+    return (
+        cleaned_df,
+        cleaning_log
+    )

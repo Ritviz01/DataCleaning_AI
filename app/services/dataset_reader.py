@@ -3,20 +3,21 @@ from app.services.encoding_detector import detect_encoding
 
 import polars as pl
 import csv
-import tempfile
-import os
 
 
 def read_dataset(file_path: str, file_type: str):
 
-    # CSV files
+    # -----------------------------
+    # CSV FILES
+    # -----------------------------
     if file_type == "csv":
 
         encoding = detect_encoding(file_path)
 
-        print(f"Detected Encoding: {encoding}")
+        print(
+            f"Detected Encoding: {encoding}"
+        )
 
-        # First few lines check karo
         with open(
             file_path,
             "r",
@@ -26,13 +27,13 @@ def read_dataset(file_path: str, file_type: str):
 
             lines = f.readlines()
 
-        # Header
+        # Header line
         header = lines[0].strip()
 
         # ---------------------------------
         # Mixed CSV Detection
-        # Header comma se
-        # Data pipe se
+        # Header comma separated
+        # Data pipe separated
         # ---------------------------------
 
         if "," in header:
@@ -52,8 +53,11 @@ def read_dataset(file_path: str, file_type: str):
                 )
 
                 columns = [
+
                     col.strip()
+
                     for col in header.split(",")
+
                 ]
 
                 cleaned_rows = []
@@ -63,13 +67,25 @@ def read_dataset(file_path: str, file_type: str):
                     if not line.strip():
                         continue
 
-                    values = [
-                        value.strip()
-                        for value in line.split("|")
-                    ]
+                    values = []
+
+                    for value in line.split("|"):
+
+                        cleaned_value = (
+                            value
+                            .strip()
+                            .rstrip(",")
+                        )
+
+                        values.append(
+                            cleaned_value
+                        )
 
                     if len(values) == len(columns):
-                        cleaned_rows.append(values)
+
+                        cleaned_rows.append(
+                            values
+                        )
 
                 return pl.DataFrame(
                     cleaned_rows,
@@ -78,19 +94,25 @@ def read_dataset(file_path: str, file_type: str):
                 )
 
         # ---------------------------------
-        # Normal delimiter detection
+        # Normal CSV Detection
         # ---------------------------------
 
-        sample = "".join(lines[:20])
+        sample = "".join(
+            lines[:20]
+        )
 
         try:
 
-            delimiter = csv.Sniffer().sniff(
-                sample,
-                delimiters=",;|\t"
-            ).delimiter
+            delimiter = (
+                csv.Sniffer()
+                .sniff(
+                    sample,
+                    delimiters=",;|\t"
+                )
+                .delimiter
+            )
 
-        except:
+        except Exception:
 
             delimiter = ","
 
@@ -99,36 +121,61 @@ def read_dataset(file_path: str, file_type: str):
         )
 
         return pl.read_csv(
+
             file_path,
+
             separator=delimiter,
+
             encoding=encoding,
+
             ignore_errors=True,
+
             try_parse_dates=True,
+
             null_values=[
                 "",
                 "NA",
                 "NULL",
                 "null"
             ]
+
         )
 
-    # Excel files
+    # -----------------------------
+    # EXCEL
+    # -----------------------------
+
     elif file_type == "excel":
 
-        return pl.read_excel(file_path)
+        return pl.read_excel(
+            file_path
+        )
 
-    # JSON files
+    # -----------------------------
+    # JSON
+    # -----------------------------
+
     elif file_type == "json":
 
-        return pl.read_json(file_path)
+        return pl.read_json(
+            file_path
+        )
 
-    # Parquet files
+    # -----------------------------
+    # PARQUET
+    # -----------------------------
+
     elif file_type == "parquet":
 
-        return pl.read_parquet(file_path)
+        return pl.read_parquet(
+            file_path
+        )
 
     else:
 
         raise ValueError(
-            f"Unsupported file type: {file_type}"
+
+            f"Unsupported file type: "
+            f"{file_type}"
+
         )

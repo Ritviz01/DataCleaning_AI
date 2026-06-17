@@ -14,15 +14,15 @@ Student_ID , First_Name , Last_Name , Age , Gender , Course , Enrollment_Date , 
 113      | Esther   | Adams  | 21  | M      | Data Science   | 2022-06-25      | $900,,,,,,,
 114       | Sarah      | Brown     | 23  | F      | Data Science   | NA              | $1100,,,,,,,
 115      | David      | Davis     | 20  | M      | Web Development | 2021-09-10    | $950,,,,,,,
-Davis ,Davis ,Brown,,M 25,Data Analytics,05-09-23," ?20,000.00 "
-Anita,Anita,West,,F 24,4,05-01-20," ?30,000.00 "
-Olawale Akintola,Olawale Akintola,,,M 20,Web Developmet,05-08-21," ?30,000.00 "
-Wike,Wike,Akintola,,M 25,,06-05-22," ?36,000.00 "
-,,Leke,,M 21,,07-09-23," ?40,000.00 "
-Ayodele,Ayodele,,F,18,Machine Learning,08-09-23," ?37,440.00 "
-,,,M,25,,09-09-22," ?37,488.00 "
-,,,F,25,,10-09-21," ?37,497.60 "
-,,,,,,11-09-21,
+Davis ,Davis ,Brown,,M 25,Data Analytics,05-09-2023," ?20,000.00 "
+Anita,Anita,West,,F 24,4,05-01-2020," ?30,000.00 "
+Olawale Akintola,Olawale Akintola,,,M 20,Web Developmet,05-08-2021," ?30,000.00 "
+Wike,Wike,Akintola,,M 25,,06-05-2022," ?36,000.00 "
+,,Leke,,M 21,,07-09-2023," ?40,000.00 "
+Ayodele,Ayodele,,F,18,Machine Learning,08-09-2023," ?37,440.00 "
+,,,M,25,,09-09-2022," ?37,488.00 "
+,,,F,25,,10-09-2021," ?37,497.60 "
+,,,,,,11-09-2021,
 101        | Ethan      | Miller     | 22  | M      | Data Science    | 2022-05-15      | $1200,101        | Ethan      | Miller     | 22  | M      | Data Science    | 2022-05-15      | $1200,,,,,,
 102        | Olivia     | Johnson    | 24  | F      | Machine Learning| 2022-03-18      | $1400,102        | Olivia     | Johnson    | 24  | F      | Machine Learning| 2022-03-18      | $1400,,,,,,
 103        | Noah       | Williams   | 21  | M      | Data Science    | 2022-06-25      | $900,103        | Noah       | Williams   | 21  | M      | Data Science    | 2022-06-25      | $900,,,,,,
@@ -34,11 +34,11 @@ Ayodele,Ayodele,,F,18,Machine Learning,08-09-23," ?37,440.00 "
 109        | James      | Anderson   | 24  | M      | Data Science    | 2022-01-10      | $950,109        | James      | Anderson   | 24  | M      | Data Science    | 2022-01-10      | $950,,,,,,
 110        | Isabella   | Martinez   | 26  | F      | Data Science    | 2023-02-28      | $1150,110        | Isabella   | Martinez   | 26  | F      | Data Science    | 2023-02-28      | $1150,,,,,,
 500        | Jackson    | Murphy     | 21  | M      | Web Development | 2023-06-05      | $1050,500        | Jackson    | Murphy     | 21  | M      | Web Development | 2023-06-05      | $1050,,,,,,
-Joseph ,Joseph ,Williams,22,F 24,Machine Learning,08-01-23,"£20,000"
-Kylian,Kylian,Eden,78*,M,Machine Learning,08-01-24,"£20,000"
-Esther,Esther,Naomi,21*,F,Machine Learning,08-01-22,"£20,000"
-Lay,Lay,Martin,22,M,Web Developmet,08-01-24,"£20,000"
-Rock,Rock,Shy,23,M,Data Analytics,02-05-99,
+Joseph ,Joseph ,Williams,22,F 24,Machine Learning,08-01-2023,"£20,000"
+Kylian,Kylian,Eden,78*,M,Machine Learning,08-01-2024,"£20,000"
+Esther,Esther,Naomi,21*,F,Machine Learning,08-01-2022,"£20,000"
+Lay,Lay,Martin,22,M,Web Developmet,08-01-2024,"£20,000"
+Rock,Rock,Shy,23,M,Data Analytics,02-05-1999,
 144     | Ethe     | Miller      | 22  | M      | Data Science     | 2022-05-15      | $1200,144     | Ethe     | Miller      | 22  | M      | Data Science     | 2022-05-15      | $1200,,,,,,
 145      | Olivian     | Johnson     | 24  | F      | Machine Learning | 2022-03-18      | $1400,145      | Olivian     | Johnson     | 24  | F      | Machine Learning | 2022-03-18      | $1400,,,,,,
 146        | Noah       | Ray    | 21  | M      | Data Science     | 2022-06-25      | $900,146        | Noah       | Ray    | 21  | M      | Data Science     | 2022-06-25      | $900,,,,,,
@@ -135,3 +135,4 @@ Ifeoluwa Anikulapo,Ifeoluwa Anikulapo,,23,M,Cyber Security,31-Aug-23," ? 3,644,5
 235        | Zainab     | Abiodun     | 23  | F      | Web Development  | 2022-07-21      | $1050,,,,,,,
 236        | Nasiru     | Adebayo     | 24  | M      | Data Science     | 2022-05-09      | $1120,,,,,,,
 237       | Aisha      | Okonkwo     | 25  | F      | Machine Learning | 2023-01-15      | $1300,,,,,,,
+"1000,Test,User,22,M,Data Science,2024-01-01,$50000",,,,,,,

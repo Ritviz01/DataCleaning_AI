@@ -1,35 +1,20 @@
-# Generate recommendations using:
-# 1. Detected issues
-# 2. Schema information
-# 3. Type inference suggestions
-
 def generate_recommendations(
     issues,
     schema,
     type_suggestions
 ):
 
-    # Store all recommendations
     recommendations = []
 
-    # Fast lookup dictionary
-    # Example:
-    # {
-    #   "Age": "Integer",
-    #   "Total_Payments": "Float"
-    # }
     type_map = {}
 
     for item in type_suggestions:
-
         type_map[item["column"]] = item["suggested_type"]
 
-    # Check every detected issue
     for issue in issues:
 
         column_name = issue["column"]
 
-        # Find schema information for current column
         column_schema = next(
             (
                 col
@@ -39,31 +24,60 @@ def generate_recommendations(
             None
         )
 
-        # Skip if schema not found
         if not column_schema:
             continue
 
-        semantic_type = column_schema["semantic_type"]
+        semantic_type = column_schema.get(
+            "semantic_type",
+            "UNKNOWN"
+        )
 
-        # ----------------------------------
-        # Missing Values Handling
-        # ----------------------------------
+        # ==========================
+        # MISSING VALUES
+        # ==========================
 
         if issue["issue_type"] == "missing_values":
 
-            # Get inferred datatype
-            suggested_type = type_map.get(column_name)
+            percentage = issue.get(
+                "percentage",
+                0
+            )
 
-            # ----------------------------------
+            suggested_type = type_map.get(
+                column_name
+            )
+
+            # --------------------------
+            # Entire Column Missing
+            # --------------------------
+
+            if percentage >= 100:
+
+                recommendations.append({
+
+                    "column": column_name,
+
+                    "issue": "missing_values",
+
+                    "recommended_action":
+                        "drop_column",
+
+                    "reason":
+                        "Column contains 100% missing values",
+
+                    "confidence": 1.0
+                })
+
+                continue
+
+            # --------------------------
             # Numeric Columns
-            # Example:
-            # Age
-            # Salary
-            # Revenue
-            # Total_Payments
-            # ----------------------------------
+            # --------------------------
 
-            if suggested_type in ["Integer", "Float"]:
+            if suggested_type in [
+                "Integer",
+                "Float"
+            ]:
 
                 recommendations.append({
 
@@ -80,12 +94,11 @@ def generate_recommendations(
                     "confidence": 0.95
                 })
 
-                # Stop further processing
                 continue
 
-            # ----------------------------------
+            # --------------------------
             # ID Columns
-            # ----------------------------------
+            # --------------------------
 
             if semantic_type == "ID":
 
@@ -104,9 +117,9 @@ def generate_recommendations(
                     "confidence": 0.95
                 })
 
-            # ----------------------------------
+            # --------------------------
             # Date Columns
-            # ----------------------------------
+            # --------------------------
 
             elif semantic_type == "DATE":
 
@@ -125,9 +138,34 @@ def generate_recommendations(
                     "confidence": 0.85
                 })
 
-            # ----------------------------------
+            # --------------------------
+            # Text Columns
+            # --------------------------
+
+            elif semantic_type in [
+                "TEXT",
+                "DESCRIPTION",
+                "PARAGRAPH"
+            ]:
+
+                recommendations.append({
+
+                    "column": column_name,
+
+                    "issue": "missing_values",
+
+                    "recommended_action":
+                        "leave_missing",
+
+                    "reason":
+                        "Long text fields should not be mode imputed",
+
+                    "confidence": 0.95
+                })
+
+            # --------------------------
             # Categorical Columns
-            # ----------------------------------
+            # --------------------------
 
             else:
 
@@ -146,9 +184,9 @@ def generate_recommendations(
                     "confidence": 0.80
                 })
 
-        # ----------------------------------
-        # Duplicate Rows Handling
-        # ----------------------------------
+        # ==========================
+        # DUPLICATE ROWS
+        # ==========================
 
         elif issue["issue_type"] == "duplicate_rows":
 
@@ -165,6 +203,48 @@ def generate_recommendations(
                     "Duplicate records detected",
 
                 "confidence": 0.98
+            })
+
+        # ==========================
+        # DUPLICATE IDS
+        # ==========================
+
+        elif issue["issue_type"] == "duplicate_ids":
+
+            recommendations.append({
+
+                "column": column_name,
+
+                "issue": "duplicate_ids",
+
+                "recommended_action":
+                    "manual_review",
+
+                "reason":
+                    "Primary key contains duplicates",
+
+                "confidence": 1.0
+            })
+
+        # ==========================
+        # OUTLIERS
+        # ==========================
+
+        elif issue["issue_type"] == "outliers":
+
+            recommendations.append({
+
+                "column": column_name,
+
+                "issue": "outliers",
+
+                "recommended_action":
+                    "cap_outliers",
+
+                "reason":
+                    "Outliers detected using IQR method",
+
+                "confidence": 0.90
             })
 
     return recommendations
