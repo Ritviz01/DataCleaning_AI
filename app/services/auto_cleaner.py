@@ -1,9 +1,14 @@
 import polars as pl
 
+from app.services.type_converter import (
+    apply_type_conversions
+)
+
 
 def auto_clean_dataset(
     df,
-    recommendations
+    recommendations,
+    type_suggestions=None
 ):
 
     cleaned_df = df.clone()
@@ -11,33 +16,66 @@ def auto_clean_dataset(
     cleaning_log = []
 
     # ==========================================
-    # Currency Cleanup (Optional)
+    # Type Conversion
+    # ==========================================
+
+    if type_suggestions:
+
+        try:
+
+            cleaned_df = apply_type_conversions(
+                cleaned_df,
+                type_suggestions
+            )
+
+            cleaning_log.append({
+
+                "action":
+                "type_conversion",
+
+                "columns_processed":
+                len(type_suggestions)
+
+            })
+
+        except Exception as e:
+
+            print(
+                f"Type Conversion Error: {e}"
+            )
+
+    # ==========================================
+    # Currency Cleanup
     # ==========================================
 
     if "Total_Payments" in cleaned_df.columns:
 
         try:
 
-            cleaned_df = cleaned_df.with_columns(
+            cleaned_df = (
+                cleaned_df
+                .with_columns(
 
-                pl.col("Total_Payments")
+                    pl.col(
+                        "Total_Payments"
+                    )
 
-                .cast(pl.Utf8)
+                    .cast(pl.Utf8)
 
-                .str.replace_all(
-                    r"[^0-9.]",
-                    ""
+                    .str.replace_all(
+                        r"[^0-9.]",
+                        ""
+                    )
+
+                    .cast(
+                        pl.Float64,
+                        strict=False
+                    )
+
+                    .alias(
+                        "Total_Payments"
+                    )
                 )
-
-                .cast(
-                    pl.Float64,
-                    strict=False
-                )
-
-                .alias(
-                    "Total_Payments"
-                )
-
             )
 
             cleaning_log.append({
@@ -66,63 +104,76 @@ def auto_clean_dataset(
             "recommended_action"
         ]
 
-        # --------------------------------------
+        # ======================================
         # REMOVE DUPLICATES
-        # --------------------------------------
+        # ======================================
 
         if action == "remove_duplicates":
 
-            before = cleaned_df.height
+            try:
 
-            cleaned_df = (
-                cleaned_df
-                .unique()
-            )
+                before = cleaned_df.height
 
-            after = cleaned_df.height
+                cleaned_df = (
+                    cleaned_df
+                    .unique()
+                )
 
-            cleaning_log.append({
+                after = cleaned_df.height
 
-                "action":
-                "remove_duplicates",
+                cleaning_log.append({
 
-                "rows_removed":
-                before - after
+                    "action":
+                    "remove_duplicates",
 
-            })
+                    "rows_removed":
+                    before - after
+
+                })
+
+            except Exception:
+
+                pass
 
             continue
 
-        # --------------------------------------
-        # Skip if column not exists
-        # --------------------------------------
+        # ======================================
+        # Column Exists?
+        # ======================================
 
         if column not in cleaned_df.columns:
             continue
 
-        # --------------------------------------
+        # ======================================
         # DROP COLUMN
-        # --------------------------------------
+        # ======================================
 
         if action == "drop_column":
 
-            cleaned_df = cleaned_df.drop(
-                column
-            )
+            try:
 
-            cleaning_log.append({
+                cleaned_df = (
+                    cleaned_df
+                    .drop(column)
+                )
 
-                "column":
-                column,
+                cleaning_log.append({
 
-                "action":
-                "drop_column"
+                    "column":
+                    column,
 
-            })
+                    "action":
+                    "drop_column"
 
-        # --------------------------------------
+                })
+
+            except Exception:
+
+                pass
+
+        # ======================================
         # MEDIAN IMPUTATION
-        # --------------------------------------
+        # ======================================
 
         elif action == "median_imputation":
 
@@ -156,9 +207,7 @@ def auto_clean_dataset(
                             median_value
                         )
 
-                        .alias(
-                            column
-                        )
+                        .alias(column)
 
                     )
                 )
@@ -180,9 +229,9 @@ def auto_clean_dataset(
 
                 pass
 
-        # --------------------------------------
+        # ======================================
         # MODE IMPUTATION
-        # --------------------------------------
+        # ======================================
 
         elif action == "mode_imputation":
 
@@ -214,9 +263,7 @@ def auto_clean_dataset(
                                 mode_value
                             )
 
-                            .alias(
-                                column
-                            )
+                            .alias(column)
 
                         )
                     )
@@ -238,9 +285,9 @@ def auto_clean_dataset(
 
                 pass
 
-        # --------------------------------------
+        # ======================================
         # FORWARD FILL
-        # --------------------------------------
+        # ======================================
 
         elif action == "forward_fill":
 
@@ -254,9 +301,7 @@ def auto_clean_dataset(
 
                         .forward_fill()
 
-                        .alias(
-                            column
-                        )
+                        .alias(column)
 
                     )
                 )
@@ -275,15 +320,15 @@ def auto_clean_dataset(
 
                 pass
 
-        # --------------------------------------
-        # CAP OUTLIERS
-        # --------------------------------------
+        # ======================================
+        # OUTLIER CAPPING
+        # ======================================
 
         elif action == "cap_outliers":
 
             try:
 
-                numeric_col = (
+                numeric_series = (
 
                     cleaned_df[column]
 
@@ -292,28 +337,39 @@ def auto_clean_dataset(
                         strict=False
                     )
 
+                    .drop_nulls()
+
                 )
 
+                if len(numeric_series) < 5:
+                    continue
+
                 q1 = (
-                    numeric_col
+                    numeric_series
                     .quantile(0.25)
                 )
 
                 q3 = (
-                    numeric_col
+                    numeric_series
                     .quantile(0.75)
                 )
 
+                if q1 is None or q3 is None:
+                    continue
+
                 iqr = q3 - q1
+
+                if iqr == 0:
+                    continue
 
                 lower_bound = (
                     q1 -
-                    1.5 * iqr
+                    (1.5 * iqr)
                 )
 
                 upper_bound = (
                     q3 +
-                    1.5 * iqr
+                    (1.5 * iqr)
                 )
 
                 cleaned_df = (
@@ -332,9 +388,7 @@ def auto_clean_dataset(
                             upper_bound
                         )
 
-                        .alias(
-                            column
-                        )
+                        .alias(column)
 
                     )
                 )
