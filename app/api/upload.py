@@ -78,6 +78,7 @@ async def upload_file(file: UploadFile = File(...)):
 
     # Quality
     quality = calculate_quality_score(
+        profile,
         issues
     )
 
@@ -120,6 +121,7 @@ async def upload_file(file: UploadFile = File(...)):
 
     # After Cleaning Quality
     cleaned_quality = calculate_quality_score(
+        cleaned_profile,
         cleaned_issues
     )
 

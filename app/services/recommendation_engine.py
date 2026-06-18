@@ -6,10 +6,11 @@ def generate_recommendations(
 
     recommendations = []
 
-    type_map = {}
-
-    for item in type_suggestions:
-        type_map[item["column"]] = item["suggested_type"]
+    # Fast lookup for inferred types
+    type_map = {
+        item["column"]: item["suggested_type"]
+        for item in type_suggestions
+    }
 
     for issue in issues:
 
@@ -32,11 +33,13 @@ def generate_recommendations(
             "UNKNOWN"
         )
 
-        # ==========================
-        # MISSING VALUES
-        # ==========================
+        issue_type = issue["issue_type"]
 
-        if issue["issue_type"] == "missing_values":
+        # ==================================
+        # MISSING VALUES
+        # ==================================
+
+        if issue_type == "missing_values":
 
             percentage = issue.get(
                 "percentage",
@@ -47,101 +50,55 @@ def generate_recommendations(
                 column_name
             )
 
-            # --------------------------
-            # Entire Column Missing
-            # --------------------------
-
+            # 100% missing column
             if percentage >= 100:
 
                 recommendations.append({
-
                     "column": column_name,
-
                     "issue": "missing_values",
-
-                    "recommended_action":
-                        "drop_column",
-
-                    "reason":
-                        "Column contains 100% missing values",
-
+                    "recommended_action": "drop_column",
+                    "reason": "Column contains 100% missing values",
                     "confidence": 1.0
                 })
 
                 continue
 
-            # --------------------------
-            # Numeric Columns
-            # --------------------------
-
-            if suggested_type in [
-                "Integer",
-                "Float"
-            ]:
+            # Numeric columns
+            if suggested_type in ["Integer", "Float"]:
 
                 recommendations.append({
-
                     "column": column_name,
-
                     "issue": "missing_values",
-
-                    "recommended_action":
-                        "median_imputation",
-
-                    "reason":
-                        "Numeric column detected by type inference",
-
+                    "recommended_action": "median_imputation",
+                    "reason": "Numeric column detected by type inference",
                     "confidence": 0.95
                 })
 
                 continue
 
-            # --------------------------
-            # ID Columns
-            # --------------------------
-
+            # ID column
             if semantic_type == "ID":
 
                 recommendations.append({
-
                     "column": column_name,
-
                     "issue": "missing_values",
-
-                    "recommended_action":
-                        "manual_review",
-
-                    "reason":
-                        "Primary identifier column",
-
+                    "recommended_action": "manual_review",
+                    "reason": "Primary identifier column",
                     "confidence": 0.95
                 })
 
-            # --------------------------
-            # Date Columns
-            # --------------------------
-
+            # Date column
             elif semantic_type == "DATE":
 
                 recommendations.append({
-
                     "column": column_name,
-
                     "issue": "missing_values",
-
-                    "recommended_action":
-                        "forward_fill",
-
-                    "reason":
-                        "Date column",
-
+                    "recommended_action": "forward_fill",
+                    "reason": "Date column",
                     "confidence": 0.85
                 })
 
-            # --------------------------
-            # Text Columns
-            # --------------------------
-
+            # Long text columns
             elif semantic_type in [
                 "TEXT",
                 "DESCRIPTION",
@@ -149,102 +106,92 @@ def generate_recommendations(
             ]:
 
                 recommendations.append({
-
                     "column": column_name,
-
                     "issue": "missing_values",
-
-                    "recommended_action":
-                        "leave_missing",
-
-                    "reason":
-                        "Long text fields should not be mode imputed",
-
+                    "recommended_action": "leave_missing",
+                    "reason": "Long text fields should not be mode imputed",
                     "confidence": 0.95
                 })
 
-            # --------------------------
-            # Categorical Columns
-            # --------------------------
+            # URL columns
+            elif semantic_type == "URL":
 
+                recommendations.append({
+                    "column": column_name,
+                    "issue": "missing_values",
+                    "recommended_action": "leave_missing",
+                    "reason": "URLs should not be mode imputed",
+                    "confidence": 0.95
+                })
+
+            # Default categorical handling
             else:
 
                 recommendations.append({
-
                     "column": column_name,
-
                     "issue": "missing_values",
-
-                    "recommended_action":
-                        "mode_imputation",
-
-                    "reason":
-                        "Categorical column",
-
+                    "recommended_action": "mode_imputation",
+                    "reason": "Categorical column",
                     "confidence": 0.80
                 })
 
-        # ==========================
+        # ==================================
         # DUPLICATE ROWS
-        # ==========================
+        # ==================================
 
-        elif issue["issue_type"] == "duplicate_rows":
+        elif issue_type == "duplicate_rows":
 
             recommendations.append({
-
                 "column": "ALL",
-
                 "issue": "duplicate_rows",
-
-                "recommended_action":
-                    "remove_duplicates",
-
-                "reason":
-                    "Duplicate records detected",
-
+                "recommended_action": "remove_duplicates",
+                "reason": "Duplicate records detected",
                 "confidence": 0.98
             })
 
-        # ==========================
+        # ==================================
         # DUPLICATE IDS
-        # ==========================
+        # ==================================
 
-        elif issue["issue_type"] == "duplicate_ids":
+        elif issue_type == "duplicate_ids":
 
             recommendations.append({
-
                 "column": column_name,
-
                 "issue": "duplicate_ids",
-
-                "recommended_action":
-                    "manual_review",
-
-                "reason":
-                    "Primary key contains duplicates",
-
+                "recommended_action": "manual_review",
+                "reason": "Primary key contains duplicates",
                 "confidence": 1.0
             })
 
-        # ==========================
+        # ==================================
         # OUTLIERS
-        # ==========================
+        # ==================================
 
-        elif issue["issue_type"] == "outliers":
+        elif issue_type == "outliers":
+
+            recommendations.append({
+                "column": column_name,
+                "issue": "outliers",
+                "recommended_action": "cap_outliers",
+                "reason": "Outliers detected using IQR method",
+                "confidence": 0.90
+            })
+        
+        elif issue["issue_type"] == "constant_column":
 
             recommendations.append({
 
                 "column": column_name,
 
-                "issue": "outliers",
+                "issue": "constant_column",
 
                 "recommended_action":
-                    "cap_outliers",
+                "drop_column",
 
                 "reason":
-                    "Outliers detected using IQR method",
+                "Column contains only one unique value",
 
-                "confidence": 0.90
-            })
+                "confidence": 0.98
+        })
 
     return recommendations

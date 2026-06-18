@@ -2,21 +2,21 @@ from app.services.validators import (
     is_valid_email,
     is_valid_date
 )
+
 from app.services.outlier_detector import (
     detect_outliers
 )
 
+
 def detect_issues(df):
 
-    # Saare detected issues yahan store honge
     issues = []
 
-    # Dataset ki total rows
     total_rows = df.height
 
-    # -----------------------------------
+    # ===================================
     # Missing Values Detection
-    # -----------------------------------
+    # ===================================
 
     for column in df.columns:
 
@@ -25,37 +25,73 @@ def detect_issues(df):
         if null_count > 0:
 
             issues.append({
+
                 "column": column,
+
                 "issue_type": "missing_values",
-                "count": null_count,
+
+                "count": int(null_count),
+
                 "percentage": round(
                     (null_count / total_rows) * 100,
                     2
                 ),
+
                 "severity": "medium"
             })
 
-    # -----------------------------------
+    # ===================================
+    # Constant Column Detection
+    # ===================================
+
+    for column in df.columns:
+
+        unique_values = (
+            df[column]
+            .drop_nulls()
+            .n_unique()
+        )
+
+        if unique_values <= 1:
+
+            issues.append({
+
+                "column": column,
+
+                "issue_type": "constant_column",
+
+                "count": total_rows,
+
+                "severity": "low"
+            })
+
+    # ===================================
     # Duplicate Row Detection
-    # -----------------------------------
+    # ===================================
 
     duplicate_rows = (
+
         total_rows -
+
         df.unique().height
     )
 
     if duplicate_rows > 0:
 
         issues.append({
+
             "column": "ALL",
+
             "issue_type": "duplicate_rows",
+
             "count": int(duplicate_rows),
+
             "severity": "high"
         })
 
-    # -----------------------------------
+    # ===================================
     # Duplicate ID Detection
-    # -----------------------------------
+    # ===================================
 
     for column in df.columns:
 
@@ -74,22 +110,28 @@ def detect_issues(df):
             )
 
             duplicate_ids = (
+
                 total_ids -
+
                 unique_ids
             )
 
             if duplicate_ids > 0:
 
                 issues.append({
+
                     "column": column,
+
                     "issue_type": "duplicate_ids",
+
                     "count": int(duplicate_ids),
+
                     "severity": "high"
                 })
 
-    # -----------------------------------
+    # ===================================
     # Invalid Email Detection
-    # -----------------------------------
+    # ===================================
 
     for column in df.columns:
 
@@ -103,30 +145,36 @@ def detect_issues(df):
                     continue
 
                 if not is_valid_email(value):
-                    print(
-                        'Invalid Email Found:',
-                        repr(value)
-                    )
+
                     invalid_count += 1
 
             if invalid_count > 0:
 
                 issues.append({
+
                     "column": column,
+
                     "issue_type": "invalid_email",
-                    "count": invalid_count,
+
+                    "count": int(invalid_count),
+
                     "severity": "high"
                 })
 
-    # -----------------------------------
+    # ===================================
     # Invalid Date Detection
-    # -----------------------------------
+    # ===================================
 
     for column in df.columns:
 
         if (
+
             "date" in column.lower()
-            or "dob" in column.lower()
+
+            or
+
+            "dob" in column.lower()
+
         ):
 
             invalid_count = 0
@@ -137,26 +185,20 @@ def detect_issues(df):
                     continue
 
                 if not is_valid_date(value):
-                    print('Invalid Date Found:', repr(value))
+
                     invalid_count += 1
 
             if invalid_count > 0:
 
                 issues.append({
+
                     "column": column,
+
                     "issue_type": "invalid_date",
-                    "count": invalid_count,
+
+                    "count": int(invalid_count),
+
                     "severity": "high"
                 })
-
-                # -----------------------------------
-                # Outlier Detection
-                # -----------------------------------
-
-                outlier_issues = detect_outliers(df)
-
-                issues.extend(outlier_issues)
-
-                return issues
-
+ 
     return issues

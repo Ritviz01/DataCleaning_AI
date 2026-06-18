@@ -6,54 +6,47 @@ def auto_clean_dataset(
     recommendations
 ):
 
-    # Cleaning log
-    cleaning_log = []
-
-    # Clone dataframe
     cleaned_df = df.clone()
 
-    # ---------------------------------
-    # Currency Cleanup
-    # ---------------------------------
+    cleaning_log = []
 
-    if (
-        "Total_Payments"
-        in cleaned_df.columns
-    ):
+    # ==========================================
+    # Currency Cleanup (Optional)
+    # ==========================================
+
+    if "Total_Payments" in cleaned_df.columns:
 
         try:
 
-            cleaned_df = (
-                cleaned_df
-                .with_columns(
+            cleaned_df = cleaned_df.with_columns(
 
-                    pl.col(
-                        "Total_Payments"
-                    )
+                pl.col("Total_Payments")
 
-                    .str.replace_all(
-                        r"[^0-9.]",
-                        ""
-                    )
+                .cast(pl.Utf8)
 
-                    .cast(
-                        pl.Float64,
-                        strict=False
-                    )
-
-                    .alias(
-                        "Total_Payments"
-                    )
+                .str.replace_all(
+                    r"[^0-9.]",
+                    ""
                 )
+
+                .cast(
+                    pl.Float64,
+                    strict=False
+                )
+
+                .alias(
+                    "Total_Payments"
+                )
+
             )
 
             cleaning_log.append({
 
                 "column":
-                    "Total_Payments",
+                "Total_Payments",
 
                 "action":
-                    "currency_cleanup"
+                "currency_cleanup"
 
             })
 
@@ -61,44 +54,81 @@ def auto_clean_dataset(
 
             pass
 
-    # ---------------------------------
-    # Process Recommendations
-    # ---------------------------------
+    # ==========================================
+    # Apply Recommendations
+    # ==========================================
 
     for recommendation in recommendations:
 
-        column = (
-            recommendation[
-                "column"
-            ]
-        )
+        column = recommendation["column"]
 
-        action = (
-            recommendation[
-                "recommended_action"
-            ]
-        )
+        action = recommendation[
+            "recommended_action"
+        ]
 
-        # Column exists?
-        if (
-            column
-            not in cleaned_df.columns
-        ):
+        # --------------------------------------
+        # REMOVE DUPLICATES
+        # --------------------------------------
+
+        if action == "remove_duplicates":
+
+            before = cleaned_df.height
+
+            cleaned_df = (
+                cleaned_df
+                .unique()
+            )
+
+            after = cleaned_df.height
+
+            cleaning_log.append({
+
+                "action":
+                "remove_duplicates",
+
+                "rows_removed":
+                before - after
+
+            })
+
             continue
 
-        # ---------------------------------
-        # MEDIAN IMPUTATION
-        # ---------------------------------
+        # --------------------------------------
+        # Skip if column not exists
+        # --------------------------------------
 
-        if (
-            action
-            ==
-            "median_imputation"
-        ):
+        if column not in cleaned_df.columns:
+            continue
+
+        # --------------------------------------
+        # DROP COLUMN
+        # --------------------------------------
+
+        if action == "drop_column":
+
+            cleaned_df = cleaned_df.drop(
+                column
+            )
+
+            cleaning_log.append({
+
+                "column":
+                column,
+
+                "action":
+                "drop_column"
+
+            })
+
+        # --------------------------------------
+        # MEDIAN IMPUTATION
+        # --------------------------------------
+
+        elif action == "median_imputation":
 
             try:
 
-                numeric_series = (
+                median_value = (
 
                     cleaned_df[column]
 
@@ -107,11 +137,8 @@ def auto_clean_dataset(
                         strict=False
                     )
 
-                )
-
-                median_value = (
-                    numeric_series
                     .median()
+
                 )
 
                 cleaned_df = (
@@ -139,13 +166,13 @@ def auto_clean_dataset(
                 cleaning_log.append({
 
                     "column":
-                        column,
+                    column,
 
                     "action":
-                        "median_imputation",
+                    "median_imputation",
 
                     "value_used":
-                        median_value
+                    median_value
 
                 })
 
@@ -153,15 +180,11 @@ def auto_clean_dataset(
 
                 pass
 
-        # ---------------------------------
+        # --------------------------------------
         # MODE IMPUTATION
-        # ---------------------------------
+        # --------------------------------------
 
-        elif (
-            action
-            ==
-            "mode_imputation"
-        ):
+        elif action == "mode_imputation":
 
             try:
 
@@ -175,10 +198,7 @@ def auto_clean_dataset(
 
                 )
 
-                if (
-                    len(mode_value)
-                    > 0
-                ):
+                if len(mode_value) > 0:
 
                     mode_value = (
                         mode_value[0]
@@ -204,15 +224,13 @@ def auto_clean_dataset(
                     cleaning_log.append({
 
                         "column":
-                            column,
+                        column,
 
                         "action":
-                            "mode_imputation",
+                        "mode_imputation",
 
                         "value_used":
-                            str(
-                                mode_value
-                            )
+                        str(mode_value)
 
                     })
 
@@ -220,15 +238,11 @@ def auto_clean_dataset(
 
                 pass
 
-        # ---------------------------------
+        # --------------------------------------
         # FORWARD FILL
-        # ---------------------------------
+        # --------------------------------------
 
-        elif (
-            action
-            ==
-            "forward_fill"
-        ):
+        elif action == "forward_fill":
 
             try:
 
@@ -250,10 +264,100 @@ def auto_clean_dataset(
                 cleaning_log.append({
 
                     "column":
-                        column,
+                    column,
 
                     "action":
-                        "forward_fill"
+                    "forward_fill"
+
+                })
+
+            except Exception:
+
+                pass
+
+        # --------------------------------------
+        # CAP OUTLIERS
+        # --------------------------------------
+
+        elif action == "cap_outliers":
+
+            try:
+
+                numeric_col = (
+
+                    cleaned_df[column]
+
+                    .cast(
+                        pl.Float64,
+                        strict=False
+                    )
+
+                )
+
+                q1 = (
+                    numeric_col
+                    .quantile(0.25)
+                )
+
+                q3 = (
+                    numeric_col
+                    .quantile(0.75)
+                )
+
+                iqr = q3 - q1
+
+                lower_bound = (
+                    q1 -
+                    1.5 * iqr
+                )
+
+                upper_bound = (
+                    q3 +
+                    1.5 * iqr
+                )
+
+                cleaned_df = (
+                    cleaned_df
+                    .with_columns(
+
+                        pl.col(column)
+
+                        .cast(
+                            pl.Float64,
+                            strict=False
+                        )
+
+                        .clip(
+                            lower_bound,
+                            upper_bound
+                        )
+
+                        .alias(
+                            column
+                        )
+
+                    )
+                )
+
+                cleaning_log.append({
+
+                    "column":
+                    column,
+
+                    "action":
+                    "cap_outliers",
+
+                    "lower_bound":
+                    round(
+                        lower_bound,
+                        2
+                    ),
+
+                    "upper_bound":
+                    round(
+                        upper_bound,
+                        2
+                    )
 
                 })
 
