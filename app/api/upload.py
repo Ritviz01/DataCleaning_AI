@@ -16,6 +16,9 @@ from app.services.auto_cleaner import auto_clean_dataset
 from app.services.llm_insights import (
     generate_llm_insights
 )
+from app.services.export_service import (
+    export_cleaned_dataset
+)
 
 # NEW
 from app.services.semantic_cleaner import (
@@ -194,6 +197,20 @@ async def upload_file(
         schema
     )
 
+    cleaned_df, cleaning_log = (
+    auto_clean_dataset(
+        df,
+        recommendations
+    )
+)
+
+    export_path = (
+        export_cleaned_dataset(
+            cleaned_df,
+            file.filename
+        )
+    )
+
     return {
 
         "filename":
@@ -238,5 +255,7 @@ async def upload_file(
             cleaned_quality
         },
         "llm_insights":
-          llm_insights,
+        llm_insights,
+
+        "download_file": export_path,
     }
