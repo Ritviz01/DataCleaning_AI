@@ -1,0 +1,3 @@
+id,name,email,amount
+001,Ada,bad-email,10
+001,,ada@example.com,99999

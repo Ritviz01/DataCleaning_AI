@@ -13,6 +13,8 @@ def detect_issues(df):
     issues = []
 
     total_rows = df.height
+    if total_rows == 0:
+        return []
 
     # ===================================
     # Missing Values Detection
@@ -201,4 +203,6 @@ def detect_issues(df):
                     "severity": "high"
                 })
  
+    # Numeric outliers are detected separately so ID-like columns stay exempt.
+    issues.extend(detect_outliers(df))
     return issues

@@ -5,3 +5,6 @@ pyarrow
 duckdb
 python-multipart
 chardet
+fastexcel
+pytest
+httpx

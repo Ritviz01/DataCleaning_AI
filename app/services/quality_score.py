@@ -35,10 +35,7 @@ def calculate_quality_score(profile, issues):
 
         missing_cells += col["null_count"]
 
-    completeness_score = (
-        (total_cells - missing_cells)
-        / total_cells
-    ) * 100
+    completeness_score = ((total_cells - missing_cells) / total_cells) * 100 if total_cells else 100.0
 
     # ==========================================
     # UNIQUENESS SCORE

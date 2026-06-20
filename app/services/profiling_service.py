@@ -15,10 +15,7 @@ def profile_dataset(df):
         profile.append({
             "column_name": column,
             "null_count": null_count,
-            "null_percentage": round(
-                (null_count / total_rows) * 100,
-                2
-            ),
+            "null_percentage": round((null_count / total_rows) * 100, 2) if total_rows else 0.0,
             "unique_values": unique_values,
             "duplicate_values": duplicate_values
         })

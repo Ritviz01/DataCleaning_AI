@@ -3,13 +3,18 @@ import re
 
 
 # Better datatype infer karne ke liye
-def infer_better_types(df):
+def infer_better_types(df, schema=None):
 
     # Suggestions store karenge
     suggestions = []
 
     # Har column check karo
+    semantic_map = {item["column_name"]: item["semantic_type"] for item in (schema or [])}
+
     for column in df.columns:
+        # Identifiers must remain strings: converting 00123 to 123 corrupts data.
+        if semantic_map.get(column) in {"ID", "PHONE", "URL", "EMAIL"}:
+            continue
 
         # Column ke first 50 non-null values lo
         sample_values = (

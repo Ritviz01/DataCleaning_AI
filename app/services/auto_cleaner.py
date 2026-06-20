@@ -45,54 +45,6 @@ def auto_clean_dataset(
             )
 
     # ==========================================
-    # Currency Cleanup
-    # ==========================================
-
-    if "Total_Payments" in cleaned_df.columns:
-
-        try:
-
-            cleaned_df = (
-                cleaned_df
-                .with_columns(
-
-                    pl.col(
-                        "Total_Payments"
-                    )
-
-                    .cast(pl.Utf8)
-
-                    .str.replace_all(
-                        r"[^0-9.]",
-                        ""
-                    )
-
-                    .cast(
-                        pl.Float64,
-                        strict=False
-                    )
-
-                    .alias(
-                        "Total_Payments"
-                    )
-                )
-            )
-
-            cleaning_log.append({
-
-                "column":
-                "Total_Payments",
-
-                "action":
-                "currency_cleanup"
-
-            })
-
-        except Exception:
-
-            pass
-
-    # ==========================================
     # Apply Recommendations
     # ==========================================
 

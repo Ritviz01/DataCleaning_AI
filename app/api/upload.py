@@ -1,242 +1,99 @@
-from fastapi import APIRouter, UploadFile, File
-import os
-import shutil
+"""Upload, analyse, and explicitly clean tabular datasets."""
 
-from app.services.file_detector import detect_file_type
-from app.services.dataset_reader import read_dataset
-from app.services.metadata_service import generate_metadata
-from app.services.schema_engine import infer_schema
-from app.services.profiling_service import profile_dataset
-from app.services.quality_score import calculate_quality_score
-from app.services.issue_detector import detect_issues
+from __future__ import annotations
+
+import re
+import uuid
+from pathlib import Path
+
+import polars as pl
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
 from app.services.column_cleaner import clean_column_names
-from app.services.recommendation_engine import generate_recommendations
-from app.services.type_inference_engine import infer_better_types
-from app.services.auto_cleaner import auto_clean_dataset
-from app.services.llm_insights import (
-    generate_llm_insights
-)
+from app.services.dataset_reader import read_dataset
+from app.services.file_detector import detect_file_type
+from app.services.pipeline import analyse_dataset, clean_dataset
 
-# NEW
-from app.services.semantic_cleaner import (
-    semantic_clean_dataset
-)
-
-from app.services.type_converter import (
-    apply_type_conversions
-)
-
-router = APIRouter()
-
-UPLOAD_DIR = "uploads"
-os.makedirs(
-    UPLOAD_DIR,
-    exist_ok=True
-)
+router = APIRouter(prefix="/datasets", tags=["datasets"])
+UPLOAD_DIR = Path("uploads").resolve()
+EXPORT_DIR = Path("exports").resolve()
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
-@router.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...)
-):
+def _safe_filename(filename: str | None) -> str:
+    name = Path(filename or "dataset").name
+    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
 
-    file_path = os.path.join(
-        UPLOAD_DIR,
-        file.filename
-    )
 
-    with open(
-        file_path,
-        "wb"
-    ) as buffer:
+async def _store_upload(file: UploadFile) -> tuple[Path, str, str]:
+    filename = _safe_filename(file.filename)
+    file_type = detect_file_type(filename)
+    if file_type == "unknown":
+        raise HTTPException(status_code=415, detail="Supported formats: CSV, XLSX, XLS, JSON, and Parquet.")
 
-        shutil.copyfileobj(
-            file.file,
-            buffer
-        )
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    destination = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
+    size = 0
+    try:
+        with destination.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="File exceeds the 100 MB upload limit.")
+                output.write(chunk)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
 
-    # ==========================
-    # FILE TYPE
-    # ==========================
+    return destination, filename, file_type
 
-    file_type = detect_file_type(
-        file.filename
-    )
 
-    # ==========================
-    # READ DATASET
-    # ==========================
+async def _read_upload(file: UploadFile) -> tuple[pl.DataFrame, str]:
+    path, filename, file_type = await _store_upload(file)
+    try:
+        dataframe = clean_column_names(read_dataset(str(path), file_type))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not read this dataset: {exc}") from exc
+    if dataframe.width == 0:
+        raise HTTPException(status_code=422, detail="Dataset has no columns.")
+    return dataframe, filename
 
-    df = read_dataset(
-        file_path,
-        file_type
-    )
 
-    # ==========================
-    # CLEAN COLUMN NAMES
-    # ==========================
+@router.post("/analyze")
+async def analyze_file(file: UploadFile = File(...)):
+    """Return a non-destructive quality report and proposed cleaning actions."""
+    dataframe, filename = await _read_upload(file)
+    return {"filename": filename, "analysis": analyse_dataset(dataframe)}
 
-    df = clean_column_names(df)
 
-    # ==========================
-    # SEMANTIC CLEANING
-    # ==========================
+@router.post("/clean")
+async def clean_file(file: UploadFile = File(...)):
+    """Apply the engine's recommendations and provide a downloadable CSV.
 
-    df = semantic_clean_dataset(df)
+    This remains a conservative baseline; sensitive identifier and invalid-value
+    problems are returned as manual-review recommendations rather than altered.
+    """
+    dataframe, filename = await _read_upload(file)
+    before = analyse_dataset(dataframe)
+    cleaned, audit_log = clean_dataset(dataframe, before["recommendations"])
+    after = analyse_dataset(cleaned)
 
-    # ==========================
-    # METADATA
-    # ==========================
-
-    metadata = generate_metadata(df)
-
-    # ==========================
-    # SCHEMA
-    # ==========================
-
-    schema = infer_schema(df)
-
-    # ==========================
-    # PROFILE
-    # ==========================
-
-    profile = profile_dataset(df)
-
-    # ==========================
-    # TYPE SUGGESTIONS
-    # ==========================
-
-    type_suggestions = (
-        infer_better_types(df)
-    )
-
-    # ==========================
-    # TYPE CONVERSION
-    # ==========================
-
-    df = apply_type_conversions(
-        df,
-        type_suggestions
-    )
-
-    # ==========================
-    # ISSUES
-    # ==========================
-
-    issues = detect_issues(df)
-
-    # ==========================
-    # QUALITY
-    # ==========================
-
-    quality = calculate_quality_score(
-        profile,
-        issues
-    )
-
-    # ==========================
-    # RECOMMENDATIONS
-    # ==========================
-
-    recommendations = (
-        generate_recommendations(
-            issues,
-            schema,
-            type_suggestions
-        )
-    )
-
-    # ==========================
-    # AUTO CLEANING
-    # ==========================
-
-    cleaned_df, cleaning_log = (
-        auto_clean_dataset(
-            df,
-            recommendations
-        )
-    )
-
-    # ==========================
-    # AFTER CLEANING PROFILE
-    # ==========================
-
-    cleaned_profile = (
-        profile_dataset(
-            cleaned_df
-        )
-    )
-
-    # ==========================
-    # AFTER CLEANING ISSUES
-    # ==========================
-
-    cleaned_issues = (
-        detect_issues(
-            cleaned_df
-        )
-    )
-
-    # ==========================
-    # AFTER CLEANING QUALITY
-    # ==========================
-
-    cleaned_quality = (
-        calculate_quality_score(
-            cleaned_profile,
-            cleaned_issues
-        )
-    )
-    llm_insights = generate_llm_insights(
-        metadata,
-        quality,
-        issues,
-        schema
-    )
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    export_name = f"cleaned_{uuid.uuid4().hex}_{Path(filename).stem}.csv"
+    cleaned.write_csv(EXPORT_DIR / export_name)
 
     return {
-
-        "filename":
-        file.filename,
-
-        "file_type":
-        file_type,
-
-        "metadata":
-        metadata,
-
-        "schema":
-        schema,
-
-        "profile":
-        profile,
-
-        "quality":
-        quality,
-
-        "issues":
-        issues,
-
-        "recommendations":
-        recommendations,
-
-        "type_suggestions":
-        type_suggestions,
-
-        "cleaning_log":
-        cleaning_log,
-
-        "after_cleaning": {
-
-            "profile":
-            cleaned_profile,
-
-            "issues":
-            cleaned_issues,
-
-            "quality":
-            cleaned_quality
-        },
-        "llm_insights":
-          llm_insights,
+        "filename": filename,
+        "before": before,
+        "after": after,
+        "cleaning_log": audit_log,
+        "export": {"filename": export_name, "download_url": f"/exports/{export_name}"},
     }
+
+
+# Backwards-compatible name for clients that started with the original prototype.
+@router.post("/upload", deprecated=True)
+async def upload_file(file: UploadFile = File(...)):
+    return await analyze_file(file)
