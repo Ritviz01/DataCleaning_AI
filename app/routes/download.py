@@ -9,7 +9,6 @@ EXPORT_DIR = Path("exports").resolve()
 
 @router.get("/{file_name}")
 def download_file(file_name: str) -> FileResponse:
-    # ``name`` prevents paths such as ../../secrets.csv from escaping exports.
     safe_name = Path(file_name).name
     path = EXPORT_DIR / safe_name
     if safe_name != file_name or not path.is_file():

@@ -12,8 +12,8 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.services.column_cleaner import clean_column_names
 from app.services.dataset_reader import read_dataset
 from app.services.file_detector import detect_file_type
-from app.services.pipeline import analyse_dataset, clean_dataset
 from app.services.openai_insights import generate_openai_insights
+from app.services.pipeline import analyse_dataset, clean_dataset
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 UPLOAD_DIR = Path("uploads").resolve()
@@ -22,8 +22,7 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
 def _safe_filename(filename: str | None) -> str:
-    name = Path(filename or "dataset").name
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return re.sub(r"[^A-Za-z0-9._-]", "_", Path(filename or "dataset").name)
 
 
 async def _store_upload(file: UploadFile) -> tuple[Path, str, str]:
@@ -31,7 +30,6 @@ async def _store_upload(file: UploadFile) -> tuple[Path, str, str]:
     file_type = detect_file_type(filename)
     if file_type == "unknown":
         raise HTTPException(status_code=415, detail="Supported formats: CSV, XLSX, XLS, JSON, and Parquet.")
-
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     destination = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
     size = 0
@@ -47,7 +45,6 @@ async def _store_upload(file: UploadFile) -> tuple[Path, str, str]:
         raise
     finally:
         await file.close()
-
     return destination, filename, file_type
 
 
@@ -71,20 +68,14 @@ async def analyze_file(file: UploadFile = File(...)):
 
 @router.post("/clean")
 async def clean_file(file: UploadFile = File(...)):
-    """Apply the engine's recommendations and provide a downloadable CSV.
-
-    This remains a conservative baseline; sensitive identifier and invalid-value
-    problems are returned as manual-review recommendations rather than altered.
-    """
+    """Apply recommendations and provide a downloadable cleaned CSV."""
     dataframe, filename = await _read_upload(file)
     before = analyse_dataset(dataframe)
     cleaned, audit_log = clean_dataset(dataframe, before["recommendations"])
     after = analyse_dataset(cleaned)
-
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     export_name = f"cleaned_{uuid.uuid4().hex}_{Path(filename).stem}.csv"
     cleaned.write_csv(EXPORT_DIR / export_name)
-
     return {
         "filename": filename,
         "before": before,
@@ -96,11 +87,7 @@ async def clean_file(file: UploadFile = File(...)):
 
 @router.post("/ai-insights")
 async def ai_insights(file: UploadFile = File(...)):
-    """Request an opt-in OpenAI explanation of aggregate quality findings.
-
-    Raw cells are deliberately excluded from the model prompt; only the generated
-    schema, profiles, issue counts, and recommendations are sent.
-    """
+    """Request an opt-in OpenAI explanation of aggregate quality findings."""
     dataframe, filename = await _read_upload(file)
     analysis = analyse_dataset(dataframe)
     try:
@@ -112,7 +99,7 @@ async def ai_insights(file: UploadFile = File(...)):
     return {"filename": filename, "analysis": analysis, "ai_insight": insight}
 
 
-# Backwards-compatible name for clients that started with the original prototype.
 @router.post("/upload", deprecated=True)
 async def upload_file(file: UploadFile = File(...)):
+    """Compatibility endpoint for the original prototype."""
     return await analyze_file(file)
