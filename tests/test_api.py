@@ -27,3 +27,9 @@ def test_clean_returns_a_downloadable_export():
     assert body["export"]["download_url"].startswith("/exports/")
     download = client.get(body["export"]["download_url"])
     assert download.status_code == 200
+
+
+def test_ai_insights_requires_an_explicit_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    response = upload("/datasets/ai-insights", "name,score\nAda,10\n")
+    assert response.status_code == 503

@@ -36,6 +36,19 @@ Open [the API documentation](http://127.0.0.1:8000/docs). The main workflow is:
 For compatibility with the original prototype, `POST /datasets/upload` remains
 available and behaves like analysis only.
 
+### Optional OpenAI insights
+
+Copy `.env.example` to `.env`, add a newly generated `OPENAI_API_KEY`, and load
+it into your current PowerShell session before starting the app:
+
+```powershell
+$env:OPENAI_API_KEY = "your_new_key"
+```
+
+Use `POST /datasets/ai-insights` when you want an LLM-written explanation. This
+is opt-in and sends aggregate metadata, schema, profiles, issues, and
+recommendations—not raw dataset cells—to OpenAI.
+
 ## Test
 
 ```powershell

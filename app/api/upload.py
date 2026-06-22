@@ -13,6 +13,7 @@ from app.services.column_cleaner import clean_column_names
 from app.services.dataset_reader import read_dataset
 from app.services.file_detector import detect_file_type
 from app.services.pipeline import analyse_dataset, clean_dataset
+from app.services.openai_insights import generate_openai_insights
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 UPLOAD_DIR = Path("uploads").resolve()
@@ -91,6 +92,24 @@ async def clean_file(file: UploadFile = File(...)):
         "cleaning_log": audit_log,
         "export": {"filename": export_name, "download_url": f"/exports/{export_name}"},
     }
+
+
+@router.post("/ai-insights")
+async def ai_insights(file: UploadFile = File(...)):
+    """Request an opt-in OpenAI explanation of aggregate quality findings.
+
+    Raw cells are deliberately excluded from the model prompt; only the generated
+    schema, profiles, issue counts, and recommendations are sent.
+    """
+    dataframe, filename = await _read_upload(file)
+    analysis = analyse_dataset(dataframe)
+    try:
+        insight = generate_openai_insights(analysis)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="OpenAI insight generation failed. Check the API key and account settings.") from exc
+    return {"filename": filename, "analysis": analysis, "ai_insight": insight}
 
 
 # Backwards-compatible name for clients that started with the original prototype.

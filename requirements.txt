@@ -8,3 +8,4 @@ chardet
 fastexcel
 pytest
 httpx
+openai
