@@ -3,6 +3,7 @@ import io
 from fastapi.testclient import TestClient
 
 from main import app
+from app.services.settings import load_local_env
 
 client = TestClient(app)
 
@@ -33,3 +34,11 @@ def test_ai_insights_requires_an_explicit_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     response = upload("/datasets/ai-insights", "name,score\nAda,10\n")
     assert response.status_code == 503
+
+
+def test_local_env_loader_does_not_replace_real_environment(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=from_file\n", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY", "from_environment")
+    load_local_env()
+    assert __import__("os").environ["OPENAI_API_KEY"] == "from_environment"

@@ -38,16 +38,21 @@ available and behaves like analysis only.
 
 ### Optional OpenAI insights
 
-Copy `.env.example` to `.env`, add a newly generated `OPENAI_API_KEY`, and load
-it into your current PowerShell session before starting the app:
+Copy `.env.example` to `.env`, then add a newly generated key after the equals
+sign. The app loads `.env` automatically at startup. This file is ignored by
+Git, so it stays on your computer.
 
 ```powershell
-$env:OPENAI_API_KEY = "your_new_key"
+Copy-Item .env.example .env
+notepad .env
 ```
 
 Use `POST /datasets/ai-insights` when you want an LLM-written explanation. This
 is opt-in and sends aggregate metadata, schema, profiles, issues, and
 recommendations—not raw dataset cells—to OpenAI.
+
+`GEMINI_API_KEY` is included in `.env.example` as a placeholder for a future
+Gemini provider. The active AI-insights endpoint currently uses OpenAI.
 
 ## Test
 

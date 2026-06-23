@@ -64,7 +64,7 @@ def generate_recommendations(
                 continue
 
             # Numeric columns
-            if suggested_type in ["Integer", "Float"]:
+            if suggested_type in ["Integer", "Float", "Integer-like", "Float-like"]:
 
                 recommendations.append({
                     "column": column_name,

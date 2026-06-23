@@ -27,7 +27,7 @@ def apply_type_conversions(
             # INTEGER
             # ==========================
 
-            if target_type == "Integer":
+            if target_type in ["Integer", "Integer-like"]:
 
                 converted_df = (
                     converted_df
@@ -55,7 +55,7 @@ def apply_type_conversions(
             # FLOAT
             # ==========================
 
-            elif target_type == "Float":
+            elif target_type in ["Float", "Float-like"]:
 
                 converted_df = (
                     converted_df

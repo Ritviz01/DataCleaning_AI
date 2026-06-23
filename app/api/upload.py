@@ -12,7 +12,6 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.services.column_cleaner import clean_column_names
 from app.services.dataset_reader import read_dataset
 from app.services.file_detector import detect_file_type
-from app.services.openai_insights import generate_openai_insights
 from app.services.pipeline import analyse_dataset, clean_dataset
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -59,11 +58,64 @@ async def _read_upload(file: UploadFile) -> tuple[pl.DataFrame, str]:
     return dataframe, filename
 
 
+def enrich_analysis_response(analysis: dict) -> dict:
+    from app.services.dataset_classifier import classify_dataset
+    from app.services.kpi_generator import generate_kpis
+    from app.services.chart_recommender import recommend_charts
+    from app.services.human_review_engine import generate_review_flags
+    from app.services.data_dictionary import generate_dictionary
+    from app.services.sql_generator import generate_sql_queries
+    from app.services.report_generator import generate_report
+
+    metadata = analysis.get("metadata", {})
+    schema = analysis.get("schema", [])
+    issues = analysis.get("issues", [])
+    quality = analysis.get("quality", {})
+    
+    # 1. Dataset type classification
+    class_res = classify_dataset(metadata, metadata.get("column_names", []), schema)
+    dataset_type = class_res.get("dataset_type", "General")
+    
+    # 2. Recommended KPIs
+    kpis = generate_kpis(dataset_type, schema)
+    
+    # 3. Recommended charts
+    charts = recommend_charts(schema)
+    
+    # 4. Human review flags
+    review_flags = generate_review_flags(issues, schema)
+    
+    # 5. Data dictionary
+    data_dict = generate_dictionary(schema, metadata)
+    
+    # 6. SQL queries
+    sql_queries = generate_sql_queries(schema, dataset_type)
+    
+    # 7. Executive report
+    report = generate_report(metadata, quality, issues, kpis, charts, dataset_type)
+    
+    return {
+        "dataset_type": dataset_type,
+        "recommended_kpis": kpis,
+        "recommended_charts": charts,
+        "human_review_flags": review_flags,
+        "data_dictionary": data_dict,
+        "sql_queries": sql_queries,
+        "executive_report": report
+    }
+
+
 @router.post("/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     """Return a non-destructive quality report and proposed cleaning actions."""
     dataframe, filename = await _read_upload(file)
-    return {"filename": filename, "analysis": analyse_dataset(dataframe)}
+    analysis = analyse_dataset(dataframe)
+    enrichment = enrich_analysis_response(analysis)
+    return {
+        "filename": filename,
+        "analysis": analysis,
+        **enrichment
+    }
 
 
 @router.post("/clean")
@@ -76,12 +128,16 @@ async def clean_file(file: UploadFile = File(...)):
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     export_name = f"cleaned_{uuid.uuid4().hex}_{Path(filename).stem}.csv"
     cleaned.write_csv(EXPORT_DIR / export_name)
+    
+    enrichment = enrich_analysis_response(after)
+    
     return {
         "filename": filename,
         "before": before,
         "after": after,
         "cleaning_log": audit_log,
         "export": {"filename": export_name, "download_url": f"/exports/{export_name}"},
+        **enrichment
     }
 
 
@@ -90,8 +146,23 @@ async def ai_insights(file: UploadFile = File(...)):
     """Request an opt-in OpenAI explanation of aggregate quality findings."""
     dataframe, filename = await _read_upload(file)
     analysis = analyse_dataset(dataframe)
+    
+    from app.services.business_insight_engine import generate_business_context
+    from app.services.openai_service import generate_ai_insights
+    
+    business_context = generate_business_context(
+        dataframe,
+        analysis["schema"]
+    )
+    
+    # Pack sample rows into business_context
+    business_context["sample_rows"] = dataframe.head(10).to_dicts()
+    
     try:
-        insight = generate_openai_insights(analysis)
+        insight = generate_ai_insights(
+            analysis,
+            business_context
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

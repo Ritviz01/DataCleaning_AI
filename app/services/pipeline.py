@@ -8,13 +8,13 @@ import polars as pl
 
 from app.services.auto_cleaner import auto_clean_dataset
 from app.services.issue_detector import detect_issues
-from app.services.llm_insights import generate_llm_insights
 from app.services.metadata_service import generate_metadata
 from app.services.profiling_service import profile_dataset
 from app.services.quality_score import calculate_quality_score
 from app.services.recommendation_engine import generate_recommendations
 from app.services.schema_engine import infer_schema
 from app.services.type_inference_engine import infer_better_types
+from app.services.dataset_insight_engine import generate_dataset_insights
 
 
 def analyse_dataset(df: pl.DataFrame) -> dict[str, Any]:
@@ -39,7 +39,7 @@ def analyse_dataset(df: pl.DataFrame) -> dict[str, Any]:
         "issues": issues,
         "recommendations": recommendations,
         "type_suggestions": type_suggestions,
-        "insights": generate_llm_insights(metadata, quality, issues, schema),
+        "insights": generate_dataset_insights(df, schema, metadata, quality, issues),
     }
 
 
