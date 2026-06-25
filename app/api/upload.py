@@ -13,6 +13,7 @@ from app.services.column_cleaner import clean_column_names
 from app.services.dataset_reader import read_dataset
 from app.services.file_detector import detect_file_type
 from app.services.pipeline import analyse_dataset, clean_dataset
+from app.services.dataset_store import dataset_store
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 UPLOAD_DIR = Path("uploads").resolve()
@@ -24,13 +25,13 @@ def _safe_filename(filename: str | None) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", Path(filename or "dataset").name)
 
 
-async def _store_upload(file: UploadFile) -> tuple[Path, str, str]:
+async def _store_upload(file: UploadFile, dataset_id: str) -> tuple[Path, str, str]:
     filename = _safe_filename(file.filename)
     file_type = detect_file_type(filename)
     if file_type == "unknown":
         raise HTTPException(status_code=415, detail="Supported formats: CSV, XLSX, XLS, JSON, and Parquet.")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    destination = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
+    destination = UPLOAD_DIR / f"{dataset_id}_{filename}"
     size = 0
     try:
         with destination.open("wb") as output:
@@ -47,15 +48,15 @@ async def _store_upload(file: UploadFile) -> tuple[Path, str, str]:
     return destination, filename, file_type
 
 
-async def _read_upload(file: UploadFile) -> tuple[pl.DataFrame, str]:
-    path, filename, file_type = await _store_upload(file)
+async def _read_upload(file: UploadFile, dataset_id: str) -> tuple[pl.DataFrame, str, Path]:
+    path, filename, file_type = await _store_upload(file, dataset_id)
     try:
         dataframe = clean_column_names(read_dataset(str(path), file_type))
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Could not read this dataset: {exc}") from exc
     if dataframe.width == 0:
         raise HTTPException(status_code=422, detail="Dataset has no columns.")
-    return dataframe, filename
+    return dataframe, filename, path
 
 
 def enrich_analysis_response(analysis: dict) -> dict:
@@ -108,10 +109,13 @@ def enrich_analysis_response(analysis: dict) -> dict:
 @router.post("/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     """Return a non-destructive quality report and proposed cleaning actions."""
-    dataframe, filename = await _read_upload(file)
+    dataset_id = uuid.uuid4().hex[:12]
+    dataframe, filename, path = await _read_upload(file, dataset_id)
+    dataset_store.store(dataframe, file_path=path, dataset_id=dataset_id)
     analysis = analyse_dataset(dataframe)
     enrichment = enrich_analysis_response(analysis)
     return {
+        "dataset_id": dataset_id,
         "filename": filename,
         "analysis": analysis,
         **enrichment
@@ -121,17 +125,25 @@ async def analyze_file(file: UploadFile = File(...)):
 @router.post("/clean")
 async def clean_file(file: UploadFile = File(...)):
     """Apply recommendations and provide a downloadable cleaned CSV."""
-    dataframe, filename = await _read_upload(file)
+    dataset_id = uuid.uuid4().hex[:12]
+    dataframe, filename, path = await _read_upload(file, dataset_id)
+    dataset_store.store(dataframe, file_path=path, dataset_id=f"{dataset_id}_raw")
+    
     before = analyse_dataset(dataframe)
     cleaned, audit_log = clean_dataset(dataframe, before["recommendations"])
-    after = analyse_dataset(cleaned)
+    
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     export_name = f"cleaned_{uuid.uuid4().hex}_{Path(filename).stem}.csv"
-    cleaned.write_csv(EXPORT_DIR / export_name)
+    export_path = EXPORT_DIR / export_name
+    cleaned.write_csv(export_path)
     
+    dataset_store.store(cleaned, file_path=export_path, dataset_id=dataset_id)
+    
+    after = analyse_dataset(cleaned)
     enrichment = enrich_analysis_response(after)
     
     return {
+        "dataset_id": dataset_id,
         "filename": filename,
         "before": before,
         "after": after,
@@ -144,7 +156,9 @@ async def clean_file(file: UploadFile = File(...)):
 @router.post("/ai-insights")
 async def ai_insights(file: UploadFile = File(...)):
     """Request an opt-in OpenAI explanation of aggregate quality findings."""
-    dataframe, filename = await _read_upload(file)
+    dataset_id = uuid.uuid4().hex[:12]
+    dataframe, filename, path = await _read_upload(file, dataset_id)
+    dataset_store.store(dataframe, file_path=path, dataset_id=dataset_id)
     analysis = analyse_dataset(dataframe)
     
     from app.services.business_insight_engine import generate_business_context
@@ -167,7 +181,7 @@ async def ai_insights(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="OpenAI insight generation failed. Check the API key and account settings.") from exc
-    return {"filename": filename, "analysis": analysis, "ai_insight": insight}
+    return {"dataset_id": dataset_id, "filename": filename, "analysis": analysis, "ai_insight": insight}
 
 
 @router.post("/upload", deprecated=True)

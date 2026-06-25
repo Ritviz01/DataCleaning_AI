@@ -93,3 +93,48 @@ Instructions:
    - KPI Suggestions
 """
     return prompt
+
+
+def build_analyst_prompt(question: str, dataset_metadata: dict, schema: list[dict]) -> str:
+    """Build a structured prompt to convert a user question into Polars code."""
+    column_names = dataset_metadata.get("column_names", []) if dataset_metadata else []
+    if not column_names and schema:
+        column_names = [col.get("column_name") for col in schema]
+
+    semantic_types = []
+    if schema:
+        semantic_types = [
+            f"{col.get('column_name')} (semantic type: {col.get('semantic_type') or 'N/A'}, data type: {col.get('data_type') or 'N/A'})"
+            for col in schema
+        ]
+
+    prompt = f"""You are an expert AI Data Analyst. Your task is to translate a natural language question about a dataset into a safe, valid Polars dataframe operation.
+
+DATASET INFORMATION:
+- Metadata: {dataset_metadata}
+- Available Columns: {column_names}
+- Column Details: {semantic_types}
+
+USER QUESTION:
+"{question}"
+
+CRITICAL RULES:
+1. ONLY use the columns listed above. NEVER invent or assume any columns.
+2. Generate ONLY valid Polars logic. The dataframe is named `df`.
+3. Never use python's `eval()` or write code outside of Polars operations.
+4. Output must be a single expression or operation on the `df` object. Examples:
+   - "Top 5 most expensive laptops":
+     df.sort("Price", descending=True).head(5)
+   - "Average price by company":
+     df.group_by("Company").agg(pl.col("Price").mean())
+   - "Show all students older than 25":
+     df.filter(pl.col("Age") > 25)
+5. Do NOT include markdown blocks (like ```json ... ```) in your response. Output a single, valid JSON object only.
+6. The JSON response MUST match this structure:
+{{
+  "explanation": "A concise natural language explanation of how you are querying the dataset to answer the user's question.",
+  "polars_code": "df.sort(\\"Price\\", descending=True).head(5)",
+  "required_columns": ["Price"]
+}}
+"""
+    return prompt
