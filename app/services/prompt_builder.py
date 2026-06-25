@@ -160,6 +160,7 @@ CRITICAL RULES:
 
 Your JSON output MUST match this exact schema:
 {{
+  "answer": "A short conversational introduction or description of the query and steps being executed.",
   "steps": [
     {{
       "operation": "filter",

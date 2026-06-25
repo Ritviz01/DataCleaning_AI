@@ -1,173 +1,137 @@
-import ast
 import polars as pl
+from typing import Any, Dict, List
 
-class SafeASTValidator(ast.NodeVisitor):
-    def __init__(self, df_columns: list[str]):
-        self.df_columns = set(df_columns)
-        # Whitelist of allowed AST nodes
-        self.allowed_nodes = {
-            ast.Expression,
-            ast.Expr,
-            ast.Call,
-            ast.Attribute,
-            ast.Name,
-            ast.Constant,
-            ast.List,
-            ast.Tuple,
-            ast.Dict,
-            ast.BinOp,
-            ast.UnaryOp,
-            ast.Compare,
-            ast.keyword,
-            ast.Slice,
-            ast.Subscript,
-            ast.Load,
-        }
-        # Whitelist of allowed global names
-        self.allowed_names = {"df", "pl", "True", "False", "None"}
+def execute_plan(plan: dict, df: pl.DataFrame) -> pl.DataFrame:
+    """Executes a validated JSON query plan using Polars operations directly.
+    
+    No eval, exec, compile, globals, or dynamic python execution is performed.
+    """
+    steps = plan.get("steps")
+    if not steps:
+        if "operation" in plan:
+            steps = [plan]
+        else:
+            raise ValueError("Query plan is empty.")
 
-    def visit(self, node):
-        # Check node type
-        node_type = type(node)
-        if node_type not in self.allowed_nodes:
-            raise ValueError(f"Blocked unsafe operation or construct: {node_type.__name__}")
+    current_df = df
+
+    for step in steps:
+        op = step.get("operation")
+
+        if op == "filter":
+            col = step["column"]
+            operator = step["operator"]
+            val = step["value"]
+            current_df = _apply_filter(current_df, col, operator, val)
+
+        elif op in ("groupby", "group_by"):
+            group_cols = step["group"]
+            if isinstance(group_cols, str):
+                group_cols = [group_cols]
+            target = step["target"]
+            agg_func = step["aggregation"]
+            current_df = _apply_groupby(current_df, group_cols, target, agg_func)
+
+        elif op == "sort":
+            col = step["column"]
+            order = step.get("order", "ascending")
+            descending = (order == "descending")
+            current_df = current_df.sort(col, descending=descending)
+            if "limit" in step and step["limit"] is not None:
+                current_df = current_df.head(int(step["limit"]))
+
+        elif op in ("head", "tail", "limit"):
+            limit = step.get("limit") or step.get("value") or 10
+            if op == "tail":
+                current_df = current_df.tail(int(limit))
+            else:
+                current_df = current_df.head(int(limit))
+
+        elif op == "unique":
+            col = step["column"]
+            current_df = current_df.select(col).unique()
+
+        elif op == "value_counts":
+            col = step["column"]
+            current_df = current_df.select(col).value_counts(sort=True)
+
+        elif op in ("mean", "median", "max", "min", "sum", "count"):
+            col = step["column"]
+            if op == "mean":
+                current_df = current_df.select(pl.col(col).mean().alias(f"mean_{col}"))
+            elif op == "median":
+                current_df = current_df.select(pl.col(col).median().alias(f"median_{col}"))
+            elif op == "max":
+                current_df = current_df.select(pl.col(col).max().alias(f"max_{col}"))
+            elif op == "min":
+                current_df = current_df.select(pl.col(col).min().alias(f"min_{col}"))
+            elif op == "sum":
+                current_df = current_df.select(pl.col(col).sum().alias(f"sum_{col}"))
+            elif op == "count":
+                current_df = current_df.select(pl.col(col).count().alias(f"count_{col}"))
+
+        elif op == "join":
+            # Placeholder for future join capabilities
+            pass
+
+    return current_df
+
+
+def _apply_filter(df: pl.DataFrame, col: str, operator: str, val: Any) -> pl.DataFrame:
+    """Applies a filter operation on the dataframe using Polars expressions."""
+    if operator in ("equals", "eq", "=="):
+        return df.filter(pl.col(col) == val)
+    elif operator in ("not_equals", "ne", "!="):
+        return df.filter(pl.col(col) != val)
+    elif operator in ("greater_than", "gt", ">"):
+        return df.filter(pl.col(col) > val)
+    elif operator in ("less_than", "lt", "<"):
+        return df.filter(pl.col(col) < val)
+    elif operator in ("greater_than_or_equal", "gte", ">="):
+        return df.filter(pl.col(col) >= val)
+    elif operator in ("less_than_or_equal", "lte", "<="):
+        return df.filter(pl.col(col) <= val)
+    elif operator in ("contains", "like"):
+        return df.filter(pl.col(col).cast(pl.Utf8).str.contains(str(val)))
+    elif operator == "in":
+        if not isinstance(val, (list, tuple, set)):
+            val = [val]
+        return df.filter(pl.col(col).is_in(list(val)))
+    else:
+        raise ValueError(f"Unsupported filter operator: '{operator}'")
+
+
+def _apply_groupby(df: pl.DataFrame, group_cols: List[str], target: str, agg_func: str) -> pl.DataFrame:
+    """Applies a groupby and aggregation operation on the dataframe."""
+    groupby_obj = df.group_by(group_cols)
+    if agg_func == "mean":
+        agg_expr = pl.col(target).mean().alias(f"mean_{target}")
+    elif agg_func == "median":
+        agg_expr = pl.col(target).median().alias(f"median_{target}")
+    elif agg_func == "sum":
+        agg_expr = pl.col(target).sum().alias(f"sum_{target}")
+    elif agg_func == "min":
+        agg_expr = pl.col(target).min().alias(f"min_{target}")
+    elif agg_func == "max":
+        agg_expr = pl.col(target).max().alias(f"max_{target}")
+    elif agg_func in ("count", "n"):
+        agg_expr = pl.col(target).count().alias(f"count_{target}")
+    else:
+        raise ValueError(f"Unsupported aggregation: '{agg_func}'")
         
-        # Check name nodes
-        if isinstance(node, ast.Name):
-            if node.id not in self.allowed_names:
-                raise ValueError(f"Blocked access to unauthorized variable or function: '{node.id}'")
-                
-        # Check attribute nodes
-        if isinstance(node, ast.Attribute):
-            if node.attr.startswith("__"):
-                raise ValueError(f"Blocked access to private/special attribute: '{node.attr}'")
+    return groupby_obj.agg(agg_expr)
 
-        # Check call nodes for columns
-        if isinstance(node, ast.Call):
-            self._check_call_columns(node)
 
-        # Continue traversing
-        self.generic_visit(node)
-
-    def _check_call_columns(self, node: ast.Call):
-        # 1. Check pl.col(...) or col(...) calls
-        is_col_call = False
-        if isinstance(node.func, ast.Attribute):
-            if isinstance(node.func.value, ast.Name) and node.func.value.id == "pl" and node.func.attr == "col":
-                is_col_call = True
-        elif isinstance(node.func, ast.Name) and node.func.id == "col":
-            is_col_call = True
-
-        if is_col_call and node.args:
-            first_arg = node.args[0]
-            self._validate_column_arg(first_arg)
-
-        # 2. Check dataframe methods that accept columns directly
-        if isinstance(node.func, ast.Attribute):
-            method_name = node.func.attr
-            if method_name in {"select", "group_by", "groupby", "sort", "drop"}:
-                # Check positional args
-                for arg in node.args:
-                    self._validate_column_arg(arg)
-                # Check keywords (e.g. by=...)
-                for kw in node.keywords:
-                    if kw.arg in {"by", "on", "left_on", "right_on"}:
-                        self._validate_column_arg(kw.value)
-
-    def _validate_column_arg(self, node: ast.AST):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if node.value not in self.df_columns:
-                raise ValueError(f"Column '{node.value}' does not exist in the dataset.")
-        elif isinstance(node, (ast.List, ast.Tuple)):
-            for elt in node.elts:
-                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                    if elt.value not in self.df_columns:
-                        raise ValueError(f"Column '{elt.value}' does not exist in the dataset.")
-
-def execute_query(code: str, df: pl.DataFrame, required_columns: list[str] = None) -> dict:
-    """
-    Safely executes a generated Polars query string on a dataframe.
-    """
-    # 1. Validate required columns list if provided
-    if required_columns:
-        for col in required_columns:
-            if col not in df.columns:
-                return {
-                    "success": False,
-                    "error": f"Validated query requires column '{col}' which is missing from the dataset."
-                }
-
-    # 2. Parse and Validate the code AST
+def execute_query(plan: dict, df: pl.DataFrame) -> dict:
+    """Safe execution wrapper returning a standard success/result payload."""
     try:
-        # Parse in eval mode (only accepts single expressions, blocking statements and imports)
-        parsed_ast = ast.parse(code.strip(), mode="eval")
-        
-        # Walk and validate AST
-        validator = SafeASTValidator(df.columns)
-        validator.visit(parsed_ast)
-    except SyntaxError as e:
+        res_df = execute_plan(plan, df)
         return {
-            "success": False,
-            "error": f"Invalid syntax in query: {e.msg} at line {e.lineno}, col {e.offset}"
+            "success": True,
+            "result": res_df.to_dicts()
         }
-    except ValueError as e:
+    except Exception as e:
         return {
             "success": False,
             "error": str(e)
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Validation failed: {str(e)}"
-        }
-
-    # 3. Compile and execute
-    try:
-        compiled_code = compile(parsed_ast, "<string>", "eval")
-        # Strict namespace: block imports, filesystem access, builtins
-        namespace = {
-            "df": df,
-            "pl": pl,
-            "__builtins__": {
-                "len": len,
-                "int": int,
-                "float": float,
-                "str": str,
-                "bool": bool,
-                "list": list,
-                "dict": dict,
-                "tuple": tuple,
-                "set": set,
-                "min": min,
-                "max": max,
-                "sum": sum,
-                "abs": abs,
-                "round": round,
-            }
-        }
-        
-        result = eval(compiled_code, namespace, {})
-        
-        # Format output
-        if isinstance(result, pl.DataFrame):
-            serializable_result = result.to_dicts()
-        elif isinstance(result, pl.Series):
-            serializable_result = result.to_list()
-        else:
-            if hasattr(result, "to_list"):
-                serializable_result = result.to_list()
-            elif hasattr(result, "to_dicts"):
-                serializable_result = result.to_dicts()
-            else:
-                serializable_result = result
-                
-        return {
-            "success": True,
-            "result": serializable_result
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Execution error: {str(e)}"
         }

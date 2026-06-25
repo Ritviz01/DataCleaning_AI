@@ -1,130 +1,124 @@
-import io
 import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from app.services.dataset_store import dataset_store
-from app.services.query_executor import execute_query
 from unittest.mock import patch
+
+from app.services.dataset_store import save_dataset, get_dataset, delete_dataset, list_datasets
+from app.services.conversation_memory import conversation_memory
+from app.services.query_validator import validate_plan
+from app.services.query_executor import execute_plan
 
 client = TestClient(app)
 
-def test_dataset_store():
-    df = pl.DataFrame({"A": [1, 2, 3], "B": ["x", "y", "z"]})
-    dataset_id = dataset_store.store(df)
-    assert dataset_id is not None
-    assert len(dataset_id) == 12
+def test_dataset_store_functions():
+    df = pl.DataFrame({"A": [1, 2, 3]})
+    ds_id = save_dataset(df)
+    assert ds_id is not None
+    assert get_dataset(ds_id).equals(df)
     
-    retrieved = dataset_store.get(dataset_id)
-    assert retrieved is not None
-    assert retrieved.equals(df)
+    assert ds_id in list_datasets()
+    
+    deleted = delete_dataset(ds_id)
+    assert deleted is True
+    assert get_dataset(ds_id) is None
+    assert ds_id not in list_datasets()
 
-def test_query_executor_success():
+def test_conversation_memory():
+    dataset_id = "test_memory_id"
+    conversation_memory.clear_history(dataset_id)
+    
+    # Check empty history
+    assert conversation_memory.get_history(dataset_id) == []
+    
+    # Add turn
+    plan = {"steps": [{"operation": "filter", "column": "A", "operator": "equals", "value": 10}]}
+    conversation_memory.add_turn(dataset_id, "Q1", "A1", plan, "Insight 1")
+    
+    history = conversation_memory.get_history(dataset_id)
+    assert len(history) == 1
+    assert history[0]["question"] == "Q1"
+    assert history[0]["selected_filters"] == [{"column": "A", "operator": "equals", "value": 10}]
+    assert "A" in history[0]["referenced_columns"]
+
+def test_query_validator_valid():
+    df = pl.DataFrame({"Price": [10.0, 20.0], "Company": ["HP", "Dell"]})
+    plan = {
+        "steps": [
+            {"operation": "filter", "column": "Company", "operator": "equals", "value": "HP"},
+            {"operation": "sort", "column": "Price", "order": "descending"}
+        ]
+    }
+    # Should not raise any error
+    validate_plan(plan, df)
+
+def test_query_validator_invalid_column():
+    df = pl.DataFrame({"Price": [10.0, 20.0]})
+    plan = {
+        "steps": [
+            {"operation": "filter", "column": "NonExistent", "operator": "equals", "value": "HP"}
+        ]
+    }
+    with pytest.raises(ValueError, match="does not exist"):
+        validate_plan(plan, df)
+
+def test_query_validator_invalid_op():
+    df = pl.DataFrame({"Price": [10.0, 20.0]})
+    plan = {
+        "steps": [
+            {"operation": "malicious_op", "column": "Price"}
+        ]
+    }
+    with pytest.raises(ValueError, match="unsupported operation"):
+        validate_plan(plan, df)
+
+def test_query_executor_execution():
     df = pl.DataFrame({
-        "Price": [10.0, 20.0, 30.0],
-        "Company": ["A", "B", "A"]
+        "Price": [100.0, 200.0, 150.0],
+        "Company": ["HP", "Dell", "HP"]
     })
     
-    # 1. Simple head
-    res = execute_query('df.head(2)', df)
-    assert res["success"] is True
-    assert len(res["result"]) == 2
-    
-    # 2. Sort descending
-    res = execute_query('df.sort("Price", descending=True).head(1)', df)
-    assert res["success"] is True
-    assert res["result"][0]["Price"] == 30.0
-    
-    # 3. Group by and aggregation
-    res = execute_query('df.group_by("Company").agg(pl.col("Price").mean()).sort("Company")', df)
-    assert res["success"] is True
-    assert res["result"][0]["Company"] == "A"
-    assert res["result"][0]["Price"] == 20.0 # (10 + 30)/2 = 20
-
-def test_query_executor_unsafe_operations():
-    df = pl.DataFrame({"Price": [10, 20]})
-    
-    # 1. Block imports
-    res = execute_query('__import__("os").system("echo 1")', df)
-    assert res["success"] is False
-    assert "Blocked" in res["error"]
-    
-    # 2. Block file access
-    res = execute_query('open("test.txt")', df)
-    assert res["success"] is False
-    assert "Blocked" in res["error"]
-    
-    # 3. Block private attributes
-    res = execute_query('df.__class__.__base__', df)
-    assert res["success"] is False
-    assert "Blocked" in res["error"]
-    
-    # 4. Block unauthorized variables
-    res = execute_query('import_module', df)
-    assert res["success"] is False
-    assert "Blocked" in res["error"]
-
-def test_query_executor_invalid_columns():
-    df = pl.DataFrame({"Price": [10, 20]})
-    
-    res = execute_query('df.select("NonExistentColumn")', df)
-    assert res["success"] is False
-    assert "does not exist" in res["error"]
-    
-    res = execute_query('df.filter(pl.col("NonExistentColumn") > 10)', df)
-    assert res["success"] is False
-    assert "does not exist" in res["error"]
-
-def test_upload_endpoints_return_dataset_id():
-    csv_data = "Company,Price\nGoogle,100\nApple,150\n"
-    
-    # 1. Analyze endpoint
-    response = client.post(
-        "/datasets/analyze",
-        files={"file": ("laptops.csv", csv_data.encode(), "text/csv")}
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert "dataset_id" in body
-    dataset_id = body["dataset_id"]
-    assert dataset_id is not None
-    
-    # Retrieve from dataset store
-    df = dataset_store.get(dataset_id)
-    assert df is not None
-    assert df.height == 2
-    assert "Company" in df.columns
+    # Plan: filter HP, sort Price descending
+    plan = {
+        "steps": [
+            {"operation": "filter", "column": "Company", "operator": "equals", "value": "HP"},
+            {"operation": "sort", "column": "Price", "order": "descending"}
+        ]
+    }
+    res = execute_plan(plan, df)
+    assert res.height == 2
+    assert res["Price"].to_list() == [150.0, 100.0]
 
 def test_ask_endpoint_success():
     df = pl.DataFrame({
-        "Company": ["A", "B"],
+        "Company": ["HP", "Dell"],
         "Price": [10, 20]
     })
-    dataset_id = dataset_store.store(df)
+    ds_id = save_dataset(df)
     
-    with patch("app.routes.analysis.generate_query_plan") as mock_gen_plan, \
-         patch("app.routes.analysis.generate_query_insights") as mock_gen_insights:
+    with patch("app.services.query_engine.generate_operations") as mock_gen_ops, \
+         patch("app.services.query_engine.generate_query_insights") as mock_gen_insights:
          
-        mock_gen_plan.return_value = {
-            "polars_code": 'df.sort("Price", descending=True).head(1)',
-            "explanation": "Sorted by Price descending and took the first record",
-            "required_columns": ["Price"]
+        mock_gen_ops.return_value = {
+            "answer": "Here are the results filtered by HP.",
+            "steps": [
+                {"operation": "filter", "column": "Company", "operator": "equals", "value": "HP"}
+            ]
         }
-        mock_gen_insights.return_value = "Company B has the highest Price, indicating premium positioning."
+        mock_gen_insights.return_value = "HP offers products in this segment."
         
         response = client.post(
             "/ask",
             json={
-                "dataset_id": dataset_id,
-                "question": "Show the company with the highest price"
+                "dataset_id": ds_id,
+                "question": "Show HP only"
             }
         )
         
         assert response.status_code == 200
         body = response.json()
-        assert body["question"] == "Show the company with the highest price"
-        assert "Sorted by Price descending" in body["answer"]
-        assert "Company B has the highest Price" in body["answer"]
-        assert len(body["data"]) == 1
-        assert body["data"][0]["Company"] == "B"
-        assert body["data"][0]["Price"] == 20
+        assert body["question"] == "Show HP only"
+        assert body["answer"] == "Here are the results filtered by HP."
+        assert body["insight"] == "HP offers products in this segment."
+        assert len(body["table"]) == 1
+        assert body["table"][0]["Company"] == "HP"
