@@ -95,8 +95,14 @@ Instructions:
     return prompt
 
 
-def build_analyst_prompt(question: str, dataset_metadata: dict, schema: list[dict]) -> str:
-    """Build a structured prompt to convert a user question into Polars code."""
+def build_analyst_prompt(
+    question: str,
+    dataset_metadata: dict,
+    schema: list[dict],
+    dataset_type: str,
+    history: list[dict]
+) -> str:
+    """Build a structured prompt to convert a user question into a JSON-based Polars query plan."""
     column_names = dataset_metadata.get("column_names", []) if dataset_metadata else []
     if not column_names and schema:
         column_names = [col.get("column_name") for col in schema]
@@ -104,37 +110,64 @@ def build_analyst_prompt(question: str, dataset_metadata: dict, schema: list[dic
     semantic_types = []
     if schema:
         semantic_types = [
-            f"{col.get('column_name')} (semantic type: {col.get('semantic_type') or 'N/A'}, data type: {col.get('data_type') or 'N/A'})"
+            f"{col.get('column_name')} (semantic: {col.get('semantic_type') or 'N/A'}, type: {col.get('data_type') or 'N/A'})"
             for col in schema
         ]
 
-    prompt = f"""You are an expert AI Data Analyst. Your task is to translate a natural language question about a dataset into a safe, valid Polars dataframe operation.
+    # Format history for prompt
+    history_str = "No prior conversation history."
+    if history:
+        history_str = ""
+        for i, turn in enumerate(history, 1):
+            history_str += f"[Turn {i}]\n"
+            history_str += f"User Question: {turn['question']}\n"
+            history_str += f"Assistant Plan: {turn['query_plan']}\n"
+            history_str += f"Assistant Insight: {turn.get('insight', 'N/A')}\n\n"
 
-DATASET INFORMATION:
+    prompt = f"""You are an expert AI Data Analyst. Your task is to translate a user's natural language question into a structured JSON query plan representing dataframe operations.
+
+DATASET DETAILS:
+- Dataset Type: {dataset_type}
 - Metadata: {dataset_metadata}
 - Available Columns: {column_names}
 - Column Details: {semantic_types}
 
-USER QUESTION:
+CONVERSATION HISTORY:
+{history_str}
+
+CURRENT USER QUESTION:
 "{question}"
 
 CRITICAL RULES:
-1. ONLY use the columns listed above. NEVER invent or assume any columns.
-2. Generate ONLY valid Polars logic. The dataframe is named `df`.
-3. Never use python's `eval()` or write code outside of Polars operations.
-4. Output must be a single expression or operation on the `df` object. Examples:
-   - "Top 5 most expensive laptops":
-     df.sort("Price", descending=True).head(5)
-   - "Average price by company":
-     df.group_by("Company").agg(pl.col("Price").mean())
-   - "Show all students older than 25":
-     df.filter(pl.col("Age") > 25)
-5. Do NOT include markdown blocks (like ```json ... ```) in your response. Output a single, valid JSON object only.
-6. The JSON response MUST match this structure:
+1. ONLY use columns listed in the available columns. NEVER invent, assume, or hallucinate columns or tables.
+2. If the current question builds upon or refers to prior turns (e.g. "Only HP" after "Top 10 expensive laptops"), merge/augment the steps from the previous turn's query plan appropriately to preserve context (e.g., adding a filter step to the sorting/limiting logic).
+3. Do NOT output raw python code or free-form text. Output valid raw JSON only.
+4. Supported operations and properties:
+   - "filter": filters rows.
+     Properties: "column" (str), "operator" (str: "equals", "not_equals", "greater_than", "less_than", "greater_than_or_equal", "less_than_or_equal", "contains", "in"), "value" (Any).
+   - "groupby": groups and aggregates.
+     Properties: "group" (list of str or str), "target" (str), "aggregation" (str: "mean", "median", "sum", "min", "max", "count").
+   - "sort": sorts dataframe.
+     Properties: "column" (str), "order" (str: "ascending" or "descending"), "limit" (optional int).
+   - "head" or "tail": limits rows.
+     Properties: "limit" (int).
+   - "unique": returns unique values.
+     Properties: "column" (str).
+   - "value_counts": counts frequencies.
+     Properties: "column" (str).
+   - "mean" / "median" / "max" / "min" / "sum" / "count": computes statistics.
+     Properties: "column" (str).
+
+Your JSON output MUST match this exact schema:
 {{
-  "explanation": "A concise natural language explanation of how you are querying the dataset to answer the user's question.",
-  "polars_code": "df.sort(\\"Price\\", descending=True).head(5)",
-  "required_columns": ["Price"]
+  "steps": [
+    {{
+      "operation": "filter",
+      "column": "Company",
+      "operator": "equals",
+      "value": "HP"
+    }}
+  ]
 }}
 """
     return prompt

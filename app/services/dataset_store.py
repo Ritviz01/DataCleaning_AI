@@ -1,5 +1,6 @@
 import os
 import uuid
+import time
 import threading
 from pathlib import Path
 import polars as pl
@@ -8,18 +9,35 @@ from app.services.file_detector import detect_file_type
 from app.services.column_cleaner import clean_column_names
 
 class DatasetStore:
-    def __init__(self, upload_dir: str = "uploads"):
+    """Thread-safe memory store for tabular datasets with disk fallbacks."""
+    def __init__(self, upload_dir: str = "uploads", expiry_seconds: int = 86400):
         self._cache = {}
         self._filepaths = {}
+        self._timestamps = {}
         self._lock = threading.Lock()
         self.upload_dir = Path(upload_dir).resolve()
+        self.expiry_seconds = expiry_seconds
+
+    def _cleanup_expired(self) -> None:
+        """Removes datasets that have exceeded their idle lifespan."""
+        now = time.time()
+        expired_ids = [
+            ds_id for ds_id, ts in self._timestamps.items()
+            if now - ts > self.expiry_seconds
+        ]
+        for ds_id in expired_ids:
+            self._cache.pop(ds_id, None)
+            self._filepaths.pop(ds_id, None)
+            self._timestamps.pop(ds_id, None)
 
     def store(self, dataframe: pl.DataFrame, file_path: str | Path | None = None, dataset_id: str | None = None) -> str:
         """Stores a dataframe in the cache and associates it with a unique ID."""
         with self._lock:
+            self._cleanup_expired()
             if not dataset_id:
                 dataset_id = uuid.uuid4().hex[:12]
             self._cache[dataset_id] = dataframe
+            self._timestamps[dataset_id] = time.time()
             if file_path:
                 self._filepaths[dataset_id] = str(Path(file_path).resolve())
             return dataset_id
@@ -27,7 +45,9 @@ class DatasetStore:
     def get(self, dataset_id: str) -> pl.DataFrame | None:
         """Retrieves a dataframe by ID, loading it from disk if not in cache."""
         with self._lock:
+            self._cleanup_expired()
             if dataset_id in self._cache:
+                self._timestamps[dataset_id] = time.time()
                 return self._cache[dataset_id]
 
             # Try to resolve path from filepaths dict
@@ -47,13 +67,47 @@ class DatasetStore:
                         df = clean_column_names(read_dataset(file_path, file_type))
                         self._cache[dataset_id] = df
                         self._filepaths[dataset_id] = file_path
+                        self._timestamps[dataset_id] = time.time()
                         return df
                 except Exception as e:
-                    # Log error or print
                     print(f"Error restoring dataset {dataset_id} from {file_path}: {e}")
                     return None
 
             return None
 
-# Singleton instance
+    def delete(self, dataset_id: str) -> bool:
+        """Removes a dataset from the cache and tracked filepaths."""
+        with self._lock:
+            self._cleanup_expired()
+            existed = dataset_id in self._cache or dataset_id in self._filepaths
+            self._cache.pop(dataset_id, None)
+            self._filepaths.pop(dataset_id, None)
+            self._timestamps.pop(dataset_id, None)
+            return existed
+
+    def list_ids(self) -> list[str]:
+        """Lists all currently tracked dataset IDs."""
+        with self._lock:
+            self._cleanup_expired()
+            # Combine cache and filepaths keys to list all stored/savable IDs
+            return list(set(self._cache.keys()) | set(self._filepaths.keys()))
+
+# Singleton instance for backwards compatibility
 dataset_store = DatasetStore()
+
+# Required module-level functions
+def save_dataset(df: pl.DataFrame) -> str:
+    """Generate unique dataset ID and store dataframe in memory."""
+    return dataset_store.store(df)
+
+def get_dataset(dataset_id: str) -> pl.DataFrame | None:
+    """Retrieve dataframe by dataset ID."""
+    return dataset_store.get(dataset_id)
+
+def delete_dataset(dataset_id: str) -> bool:
+    """Delete a dataset from memory."""
+    return dataset_store.delete(dataset_id)
+
+def list_datasets() -> list[str]:
+    """List all available datasets."""
+    return dataset_store.list_ids()
