@@ -2,19 +2,22 @@ import os
 import json
 from openai import OpenAI
 
+from app.services.openai_service import sanitize_text
+
 def generate_report_locally(
     metadata: dict,
     quality: dict,
     issues: list,
     kpis: list,
     charts: list,
-    dataset_type: str
+    dataset_type: str,
+    schema: list = None
 ) -> dict:
     issues_summary = [f"{len(issues)} data quality issues found."]
     if not issues:
         issues_summary = ["No high severity data quality issues detected."]
         
-    return {
+    report = {
         "executive_summary": f"This executive report covers the '{dataset_type}' dataset containing {metadata.get('rows', 0)} rows and {metadata.get('columns', 0)} columns.",
         "data_quality_summary": f"The overall dataset quality score is evaluated at {quality.get('quality_score', 0)} resulting in a grade of {quality.get('grade', 'N/A')}.",
         "major_issues": [f"{issue.get('issue_type', '')} in column '{issue.get('column', '')}'" for issue in issues[:3]] or issues_summary,
@@ -23,6 +26,7 @@ def generate_report_locally(
         "suggested_kpis": kpis,
         "suggested_charts": [c.get("chart", "") for c in charts]
     }
+    return sanitize_text(report, schema, metadata)
 
 def generate_report(
     metadata: dict,
@@ -30,11 +34,12 @@ def generate_report(
     issues: list,
     kpis: list,
     charts: list,
-    dataset_type: str
+    dataset_type: str,
+    schema: list = None
 ) -> dict:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        return generate_report_locally(metadata, quality, issues, kpis, charts, dataset_type)
+        return generate_report_locally(metadata, quality, issues, kpis, charts, dataset_type, schema)
         
     client = OpenAI(api_key=api_key)
     
@@ -67,6 +72,7 @@ Return your response in raw JSON format (no markdown code blocks, just raw JSON)
         )
         content = response.choices[0].message.content.strip()
         content = content.replace("```json", "").replace("```", "").strip()
-        return json.loads(content)
+        report = json.loads(content)
+        return sanitize_text(report, schema, metadata)
     except Exception:
-        return generate_report_locally(metadata, quality, issues, kpis, charts, dataset_type)
+        return generate_report_locally(metadata, quality, issues, kpis, charts, dataset_type, schema)

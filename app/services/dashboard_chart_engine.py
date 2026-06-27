@@ -1,84 +1,145 @@
+import polars as pl
 from typing import Any, Dict, List
 
-def recommend_charts(schema: List[Dict[str, Any]], domain: str) -> List[Dict[str, Any]]:
-    """Suggests list of relevant, valid chart specifications based on column schema.
+def recommend_charts(*args, **kwargs) -> List[Dict[str, Any]]:
+    """Suggests relevant chart specifications based on column schemas.
     
-    Args:
-        schema: List of column metadata dictionaries.
-        domain: Detected domain name.
-        
-    Returns:
-        List of recommended chart specification dictionaries.
+    Supports:
+        - recommend_charts(df, schema)
+        - recommend_charts(schema, domain)
     """
+    if len(args) >= 1 and isinstance(args[0], pl.DataFrame):
+        df = args[0]
+        schema = args[1] if len(args) > 1 else []
+    else:
+        schema = args[0] if len(args) >= 1 else []
+        domain = args[1] if len(args) > 1 else "General"
+        df = None
+
+    domain = kwargs.get("domain", "General")
+    if not domain or domain == "General":
+        if len(args) > 2:
+            domain = args[2]
+
     numeric_cols = []
     date_cols = []
     category_cols = []
     
     for col in schema:
         name = col.get("column_name")
+        if not name:
+            continue
         dtype = col.get("data_type", "")
         semantic = col.get("semantic_type", "")
+        
+        col_lower = name.lower().strip()
+        # Skip index and ID columns
+        if (
+            semantic in ("RECORD_ID", "ID")
+            or col_lower == "unnamed: 0"
+            or "unnamed" in col_lower
+            or col_lower in ["index", "row", "row_id", "s.no", "sl_no", "serial_number", "id"]
+            or col_lower.endswith("_id")
+            or col_lower.startswith("id_")
+        ):
+            continue
         
         if semantic == "DATE" or "date" in name.lower() or "time" in name.lower():
             date_cols.append(name)
         elif semantic in ["PRICE", "AGE", "MEASUREMENT", "COUNT", "RATING", "DURATION"] or dtype in ["Int64", "Float64", "Int32", "Float32"]:
             numeric_cols.append(name)
-        elif semantic in ["CATEGORY", "COMPANY"] or dtype == "String":
+        elif semantic in ["CATEGORY", "COMPANY", "DEPARTMENT", "GENDER", "COUNTRY", "CITY", "STATE", "STATUS"] or dtype == "String":
             category_cols.append(name)
 
     charts = []
 
-    # 1. Date + Numeric -> Line Chart (High Priority)
-    for d_col in date_cols:
-        for n_col in numeric_cols:
+    # If domain is Electronics, add specific hardware and retail templates
+    if domain.lower() in ("electronics", "electronics_dataset", "laptop"):
+        company_col = None
+        price_col = None
+        ram_col = None
+        
+        for col in schema:
+            col_name = col.get("column_name", "")
+            col_lower = col_name.lower().strip()
+            if (
+                col.get("semantic_type") in ("RECORD_ID", "ID")
+                or col_lower == "unnamed: 0"
+                or "unnamed" in col_lower
+                or col_lower in ["index", "row", "row_id", "s.no", "sl_no", "serial_number", "id"]
+                or col_lower.endswith("_id")
+                or col_lower.startswith("id_")
+            ):
+                continue
+            sem = col.get("semantic_type", "")
+            if sem == "COMPANY" or any(kw in col_lower for kw in ["company", "brand", "manufacturer"]):
+                company_col = col_name
+            elif sem == "PRICE" or any(kw in col_lower for kw in ["price", "cost", "msrp"]):
+                price_col = col_name
+            elif sem == "MEMORY" or any(kw in col_lower for kw in ["ram", "memory"]):
+                ram_col = col_name
+
+        if company_col and price_col:
+            charts.append({
+                "chart_type": "Bar Chart",
+                "title": "Average Price by Company",
+                "x_axis": company_col,
+                "y_axis": price_col,
+                "aggregation": "mean",
+                "priority": "High",
+                "reason": "Compares the average pricing across different computing brands/manufacturers."
+            })
+            
+        if ram_col:
+            charts.append({
+                "chart_type": "Histogram",
+                "title": "RAM Distribution",
+                "x_axis": ram_col,
+                "y_axis": "Frequency",
+                "aggregation": "count",
+                "priority": "High",
+                "reason": "Shows the market presence and distribution of different RAM capacities."
+            })
+            
+        if ram_col and price_col:
+            charts.append({
+                "chart_type": "Scatter Plot",
+                "title": "Price vs RAM Correlation",
+                "x_axis": ram_col,
+                "y_axis": price_col,
+                "aggregation": "identity",
+                "priority": "High",
+                "reason": "Visualizes the relationship between RAM sizes and pricing tiers."
+            })
+
+    # 1. Date + Numeric -> Line Chart
+    for d_col in date_cols[:2]:
+        for n_col in numeric_cols[:2]:
             charts.append({
                 "chart_type": "Line Chart",
-                "title": f"{n_col} Trend over Time",
+                "title": f"{n_col} Trend over {d_col}",
                 "x_axis": d_col,
                 "y_axis": n_col,
                 "aggregation": "sum" if n_col.lower() in ("sales", "revenue", "profit", "amount") else "mean",
                 "priority": "High",
-                "reason": f"Tracks changes and growth trends of {n_col} over {d_col} timeline."
+                "reason": f"Tracks growth trends and variations of {n_col} over the {d_col} timeline."
             })
 
-    # 2. Category + Numeric -> Bar Chart / Horizontal Bar Chart (High/Medium Priority)
-    for c_col in category_cols:
-        for n_col in numeric_cols:
-            is_high = c_col.lower() in ("category", "department", "company", "brand", "industry", "region")
+    # 2. Category + Numeric -> Bar Chart
+    for c_col in category_cols[:2]:
+        for n_col in numeric_cols[:2]:
             charts.append({
                 "chart_type": "Bar Chart",
                 "title": f"Average {n_col} by {c_col}",
                 "x_axis": c_col,
                 "y_axis": n_col,
                 "aggregation": "mean",
-                "priority": "High" if is_high else "Medium",
-                "reason": f"Compares how average {n_col} differs across different {c_col} groups."
+                "priority": "High" if c_col.lower() in ("category", "department", "company") else "Medium",
+                "reason": f"Compares how {n_col} averages compare across {c_col} groups."
             })
 
-    # 3. Part-to-Whole / Category breakdowns -> Pie Chart / Treemap (Medium Priority)
-    for c_col in category_cols:
-        charts.append({
-            "chart_type": "Pie Chart",
-            "title": f"{c_col} Breakdown",
-            "x_axis": c_col,
-            "y_axis": c_col,
-            "aggregation": "count",
-            "priority": "Medium",
-            "reason": f"Visualizes the volume distribution across {c_col} categories."
-        })
-        if len(category_cols) > 1:
-            charts.append({
-                "chart_type": "Treemap",
-                "title": f"{c_col} Hierarchy Breakdown",
-                "x_axis": c_col,
-                "y_axis": c_col,
-                "aggregation": "count",
-                "priority": "Medium",
-                "reason": f"Displays hierarchical proportions of {c_col} segments."
-            })
-
-    # 4. Numeric -> Histogram (Medium Priority)
-    for n_col in numeric_cols:
+    # 3. Single Numeric -> Histogram
+    for n_col in numeric_cols[:3]:
         charts.append({
             "chart_type": "Histogram",
             "title": f"{n_col} Distribution",
@@ -86,24 +147,12 @@ def recommend_charts(schema: List[Dict[str, Any]], domain: str) -> List[Dict[str
             "y_axis": "Frequency",
             "aggregation": "count",
             "priority": "Medium",
-            "reason": f"Shows the visual spread and outliers for {n_col} values."
+            "reason": f"Shows distribution shape, spread, and frequency patterns for {n_col}."
         })
 
-    # 5. Outliers -> Box Plot (Low Priority)
-    for n_col in numeric_cols:
-        charts.append({
-            "chart_type": "Box Plot",
-            "title": f"{n_col} Outliers & Range",
-            "x_axis": None,
-            "y_axis": n_col,
-            "aggregation": "identity",
-            "priority": "Low",
-            "reason": f"Identifies outliers, median, and quartiles for {n_col} across the dataset."
-        })
-
-    # 6. Correlation -> Scatter Plot (Low Priority)
+    # 4. Two Numeric Columns -> Scatter Plot
     if len(numeric_cols) >= 2:
-        for i in range(min(len(numeric_cols) - 1, 3)):
+        for i in range(min(len(numeric_cols) - 1, 2)):
             charts.append({
                 "chart_type": "Scatter Plot",
                 "title": f"{numeric_cols[i]} vs {numeric_cols[i+1]} Correlation",
@@ -111,10 +160,47 @@ def recommend_charts(schema: List[Dict[str, Any]], domain: str) -> List[Dict[str
                 "y_axis": numeric_cols[i+1],
                 "aggregation": "identity",
                 "priority": "Low",
-                "reason": f"Analyzes relationships and clustering between {numeric_cols[i]} and {numeric_cols[i+1]}."
+                "reason": f"Correlates {numeric_cols[i]} values against {numeric_cols[i+1]} to identify clusters or relationships."
             })
 
-    # Return top recommendations sorted by priority (High first, then Medium, then Low)
+    # 5. Categorical Distribution -> Pie Chart
+    for c_col in category_cols[:2]:
+        charts.append({
+            "chart_type": "Pie Chart",
+            "title": f"{c_col} Breakdown",
+            "x_axis": c_col,
+            "y_axis": c_col,
+            "aggregation": "count",
+            "priority": "Medium",
+            "reason": f"Highlights the share distribution across different categories in {c_col}."
+        })
+
+    # 6. Outlier Analysis -> Box Plot
+    for n_col in numeric_cols[:2]:
+        charts.append({
+            "chart_type": "Box Plot",
+            "title": f"{n_col} Outliers & Range",
+            "x_axis": None,
+            "y_axis": n_col,
+            "aggregation": "identity",
+            "priority": "Low",
+            "reason": f"Visualizes the summary statistics and highlights outliers for {n_col}."
+        })
+
+    # 7. Correlation -> Heatmap
+    if len(numeric_cols) >= 3:
+        charts.append({
+            "chart_type": "Heatmap",
+            "title": "Numeric Correlation Matrix",
+            "x_axis": None,
+            "y_axis": None,
+            "aggregation": "correlation",
+            "priority": "Low",
+            "reason": "Map of linear correlation coefficients to detect multicollinearity or relationships between metrics."
+        })
+
+    # Sort by priority
     priority_order = {"High": 1, "Medium": 2, "Low": 3}
     charts.sort(key=lambda c: priority_order.get(c["priority"], 3))
+    
     return charts

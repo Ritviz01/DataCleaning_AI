@@ -10,23 +10,14 @@ def generate_spec(
     local_charts: List[Dict[str, Any]],
     layout_pages: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    """Uses LLM to design and synthesize the dashboard JSON specification based on valid recommendations.
-    
-    Args:
-        schema: Dataset column schema list.
-        domain: Detected domain name.
-        local_kpis: List of valid calculated KPIs.
-        local_charts: List of recommended charts.
-        layout_pages: Default structured layout pages.
-        
-    Returns:
-        JSON specification dictionary matching the dashboard structure.
-    """
+    """Combines KPIs, charts, and layout into a single frontend-independent JSON object."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return {
-            "title": f"{domain} Analysis Dashboard",
-            "pages": layout_pages
+            "dashboard": {
+                "title": f"{domain} Analysis Dashboard",
+                "pages": layout_pages
+            }
         }
 
     client = OpenAI(api_key=api_key)
@@ -53,34 +44,36 @@ CRITICAL RULES:
 4. Output must be a single, valid JSON object only. No markdown formatting.
 5. The JSON response MUST match this exact structure:
 {{
-  "title": "A descriptive, professional title for the dashboard",
-  "pages": [
-    {{
-      "page": "Overview",
-      "description": "Short description of the page purpose",
-      "kpis": [
-        {{
-          "name": "Total Revenue",
-          "column": "Price",
-          "aggregation": "sum",
-          "priority": "High"
-        }}
-      ],
-      "charts": [
-        {{
-          "chart_type": "Bar Chart",
-          "title": "Average Price by Company",
-          "x_axis": "Company",
-          "y_axis": "Price",
-          "aggregation": "mean",
-          "priority": "High",
-          "reason": "...",
-          "business_value": "...",
-          "insight": "..."
-        }}
-      ]
-    }}
-  ]
+  "dashboard": {{
+    "title": "A descriptive, professional title for the dashboard",
+    "pages": [
+      {{
+        "page": "Overview",
+        "description": "Short description of the page purpose",
+        "kpis": [
+          {{
+            "name": "Total Revenue",
+            "column": "Price",
+            "aggregation": "sum",
+            "priority": "High"
+          }}
+        ],
+        "charts": [
+          {{
+            "chart_type": "Bar Chart",
+            "title": "Average Price by Company",
+            "x_axis": "Company",
+            "y_axis": "Price",
+            "aggregation": "mean",
+            "priority": "High",
+            "reason": "...",
+            "business_value": "...",
+            "insight": "..."
+          }}
+        ]
+      }}
+    ]
+  }}
 }}
 """
 
@@ -105,10 +98,14 @@ CRITICAL RULES:
             content = "\n".join(lines).strip()
             
         data = json.loads(content)
+        if "dashboard" not in data:
+            data = {"dashboard": data}
         return data
     except Exception as e:
         print(f"Error calling OpenAI in dashboard spec generation: {e}. Falling back to default layout.")
         return {
-            "title": f"{domain} Performance Dashboard",
-            "pages": layout_pages
+            "dashboard": {
+                "title": f"{domain} Performance Dashboard",
+                "pages": layout_pages
+            }
         }

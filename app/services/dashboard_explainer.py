@@ -2,11 +2,15 @@ import os
 from openai import OpenAI
 from typing import Any, Dict
 
-def generate_explanation(spec: dict) -> dict:
+from app.services.openai_service import sanitize_text
+
+def generate_explanation(spec: dict, schema: list = None, metadata: dict = None) -> dict:
     """Generates a professional business explanation and summary of the dashboard specification.
     
     Args:
         spec: The complete generated dashboard spec dictionary.
+        schema: Optional list of columns and their inferred data/semantic types.
+        metadata: Optional dictionary of dataset metadata.
         
     Returns:
         Dictionary containing 'summary' and 'details' list of widget explanations.
@@ -52,7 +56,7 @@ Given the following dashboard layout:
 - Title: {title}
 - KPIs: {all_kpis}
 - Charts: {all_charts}
-
+ 
 Provide a concise, professional 2-3 sentence executive business summary of why this dashboard was created, the value it provides to executive decision-makers, and how it guides strategy.
 """
         try:
@@ -70,7 +74,8 @@ Provide a concise, professional 2-3 sentence executive business summary of why t
     else:
         summary = f"The '{title}' dashboard provides a comprehensive performance view utilizing key metrics ({', '.join(all_kpis[:3])}) and visual trend charts to enable executive decisions."
         
-    return {
+    res = {
         "summary": summary,
         "details": details
     }
+    return sanitize_text(res, schema, metadata)

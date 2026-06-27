@@ -1,40 +1,71 @@
 import os
+import re
 from openai import OpenAI
 from app.services.prompt_builder import build_dataset_prompt
 
-def validate_and_sanitize_response(text: str, schema: list, metadata: dict) -> str:
-    # Extract lowercased column names
-    column_names = metadata.get("column_names", []) if metadata else []
-    if not column_names and schema:
-        column_names = [col.get("column_name") for col in schema]
-    col_lowered = [c.lower().strip() for c in column_names if c]
-    
-    # Mapping of target forbidden keywords to their required column name indicators
-    checks = {
-        "revenue": ["revenue", "income"],
-        "profit": ["profit", "earnings"],
-        "sales": ["sales", "transaction", "order", "sold", "sale"],
-        "market share": ["market share"],
-        "growth rate": ["growth rate", "growth", "trend"],
-        "employees": ["employee", "staff", "workforce", "employees"]
-    }
-    
-    lines = text.split("\n")
-    cleaned_lines = []
-    
-    for line in lines:
-        line_lower = line.lower()
-        keep = True
-        for term, columns in checks.items():
-            if term in line_lower:
-                # If no matching columns are in the dataset, filter out this line
-                if not any(col in col_lowered for col in columns):
-                    keep = False
-                    break
-        if keep:
-            cleaned_lines.append(line)
+def sanitize_text(data: any, schema: list = None, metadata: dict = None) -> any:
+    """Recursively traverses a JSON-like object (dict, list, str) and sanitizes string values
+    at the sentence level. Removes sentences containing business terms if the corresponding
+    columns/semantic types are not present in the dataset.
+    """
+    if isinstance(data, dict):
+        return {k: sanitize_text(v, schema, metadata) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_text(item, schema, metadata) for item in data]
+    elif isinstance(data, str):
+        # Extract lowercased column names
+        column_names = []
+        if metadata:
+            cols_val = metadata.get("column_names") or metadata.get("columns")
+            if isinstance(cols_val, list):
+                column_names = cols_val
+            elif isinstance(metadata.get("column_names"), list):
+                column_names = metadata.get("column_names")
+                
+        if not column_names and schema:
+            column_names = [col.get("column_name") for col in schema if isinstance(col, dict)]
             
-    return "\n".join(cleaned_lines)
+        if not isinstance(column_names, list):
+            column_names = []
+            
+        col_lowered = [str(c).lower().strip() for c in column_names if c]
+        
+        # If no schema and no metadata/columns are provided, do not filter anything
+        if not col_lowered:
+            return data
+        
+        # Define checked terms and their corresponding column name keywords/indicators
+        checks = {
+            "revenue": ["revenue", "rev", "income", "turnover", "price", "cost", "msrp", "amount"],
+            "profit": ["profit", "margin", "earnings", "income", "revenue"],
+            "sales": ["sales", "sale", "sold", "transaction", "order", "price", "amount"],
+            "orders": ["order", "purchase", "transaction", "sales", "sold"],
+            "customer retention": ["customer", "retention", "loyalty", "cohort", "churn"],
+            "retention": ["customer", "retention", "loyalty", "cohort", "churn"],
+            "employees": ["employee", "staff", "workforce", "hire", "attrition"]
+        }
+        
+        # Split text into sentences using simple regex looking for sentence endings
+        sentences = re.split(r'(?<=[.!?])\s+', data)
+        cleaned_sentences = []
+        
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            keep = True
+            for term, required_keywords in checks.items():
+                if term in sentence_lower:
+                    if not any(k in col_lowered for k in required_keywords):
+                        keep = False
+                        break
+            if keep:
+                cleaned_sentences.append(sentence)
+                
+        return " ".join(cleaned_sentences)
+    else:
+        return data
+
+def validate_and_sanitize_response(text: str, schema: list, metadata: dict) -> str:
+    return sanitize_text(text, schema, metadata)
 
 def get_llm_analysis(
     metadata,

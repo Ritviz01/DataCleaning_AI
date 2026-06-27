@@ -1,7 +1,7 @@
 from app.services.semantic_detector import detect_semantic_type
 
 
-def infer_schema(df):
+def infer_schema(df, domain="General"):
 
     schema = []
 
@@ -16,7 +16,8 @@ def infer_schema(df):
 
         semantic_info = detect_semantic_type(
             column,
-            sample_values
+            sample_values,
+            domain=domain
         )
 
         schema.append({

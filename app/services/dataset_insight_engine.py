@@ -3,7 +3,7 @@ import polars as pl
 from app.services.business_insight_engine import generate_business_context
 from app.services.dashboard_recommender import generate_dashboard_recommendations
 
-def generate_dataset_insights(df: pl.DataFrame, schema: list, metadata: dict, quality: dict, issues: list) -> dict:
+def generate_dataset_insights(df: pl.DataFrame, schema: list, metadata: dict, quality: dict, issues: list, domain: str = None) -> dict:
     rows_count = metadata.get("rows", 0)
     cols_count = metadata.get("columns", 0)
     
@@ -20,7 +20,7 @@ def generate_dataset_insights(df: pl.DataFrame, schema: list, metadata: dict, qu
         }
         
     # 1. Determine dataset type, business context, and KPIs
-    biz_context = generate_business_context(df, schema)
+    biz_context = generate_business_context(df, schema, domain=domain)
     dataset_type = biz_context["dataset_type"]
     business_insights = [biz_context["business_context"]]
     recommended_kpis = biz_context["recommended_kpis"]

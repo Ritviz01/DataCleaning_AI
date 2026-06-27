@@ -8,7 +8,7 @@ from app.services.outlier_detector import (
 )
 
 
-def detect_issues(df):
+def detect_issues(df, domain=None):
 
     issues = []
 

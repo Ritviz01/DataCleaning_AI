@@ -84,7 +84,7 @@ def enrich_analysis_response(analysis: dict) -> dict:
     charts = recommend_charts(schema)
     
     # 4. Human review flags
-    review_flags = generate_review_flags(issues, schema)
+    review_flags = generate_review_flags(issues, schema, analysis.get("type_suggestions"))
     
     # 5. Data dictionary
     data_dict = generate_dictionary(schema, metadata)
@@ -93,7 +93,7 @@ def enrich_analysis_response(analysis: dict) -> dict:
     sql_queries = generate_sql_queries(schema, dataset_type)
     
     # 7. Executive report
-    report = generate_report(metadata, quality, issues, kpis, charts, dataset_type)
+    report = generate_report(metadata, quality, issues, kpis, charts, dataset_type, schema)
     
     return {
         "dataset_type": dataset_type,
@@ -111,13 +111,35 @@ async def analyze_file(file: UploadFile = File(...)):
     """Return a non-destructive quality report and proposed cleaning actions."""
     dataset_id = uuid.uuid4().hex[:12]
     dataframe, filename, path = await _read_upload(file, dataset_id)
-    dataset_store.store(dataframe, file_path=path, dataset_id=dataset_id)
     analysis = analyse_dataset(dataframe)
+    
+    quality_score = analysis.get("quality", {}).get("quality_score")
+    issues = analysis.get("issues", [])
+    
+    dataset_store.store(
+        dataframe,
+        file_path=path,
+        dataset_id=dataset_id,
+        status="analyzed",
+        quality_score=quality_score,
+        issues=issues
+    )
+    
+    from app.services.dashboard_service import generate_dashboard, save_dashboard_to_db
+    dashboard = generate_dashboard(
+        dataframe,
+        analysis["schema"],
+        analysis["profile"],
+        analysis["insights"]
+    )
+    save_dashboard_to_db(dataset_id, dashboard)
+    
     enrichment = enrich_analysis_response(analysis)
     return {
         "dataset_id": dataset_id,
         "filename": filename,
         "analysis": analysis,
+        "dashboard": dashboard,
         **enrichment
     }
 
@@ -127,9 +149,20 @@ async def clean_file(file: UploadFile = File(...)):
     """Apply recommendations and provide a downloadable cleaned CSV."""
     dataset_id = uuid.uuid4().hex[:12]
     dataframe, filename, path = await _read_upload(file, dataset_id)
-    dataset_store.store(dataframe, file_path=path, dataset_id=f"{dataset_id}_raw")
     
     before = analyse_dataset(dataframe)
+    before_quality_score = before.get("quality", {}).get("quality_score")
+    before_issues = before.get("issues", [])
+    
+    dataset_store.store(
+        dataframe,
+        file_path=path,
+        dataset_id=f"{dataset_id}_raw",
+        status="uploaded",
+        quality_score=before_quality_score,
+        issues=before_issues
+    )
+    
     cleaned, audit_log = clean_dataset(dataframe, before["recommendations"])
     
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -137,9 +170,29 @@ async def clean_file(file: UploadFile = File(...)):
     export_path = EXPORT_DIR / export_name
     cleaned.write_csv(export_path)
     
-    dataset_store.store(cleaned, file_path=export_path, dataset_id=dataset_id)
-    
     after = analyse_dataset(cleaned)
+    after_quality_score = after.get("quality", {}).get("quality_score")
+    after_issues = after.get("issues", [])
+    
+    dataset_store.store(
+        cleaned,
+        file_path=export_path,
+        dataset_id=dataset_id,
+        status="cleaned",
+        quality_score=after_quality_score,
+        issues=after_issues,
+        audit_logs=audit_log
+    )
+    
+    from app.services.dashboard_service import generate_dashboard, save_dashboard_to_db
+    dashboard = generate_dashboard(
+        cleaned,
+        after["schema"],
+        after["profile"],
+        after["insights"]
+    )
+    save_dashboard_to_db(dataset_id, dashboard)
+    
     enrichment = enrich_analysis_response(after)
     
     return {
@@ -149,6 +202,7 @@ async def clean_file(file: UploadFile = File(...)):
         "after": after,
         "cleaning_log": audit_log,
         "export": {"filename": export_name, "download_url": f"/exports/{export_name}"},
+        "dashboard": dashboard,
         **enrichment
     }
 
@@ -158,8 +212,19 @@ async def ai_insights(file: UploadFile = File(...)):
     """Request an opt-in OpenAI explanation of aggregate quality findings."""
     dataset_id = uuid.uuid4().hex[:12]
     dataframe, filename, path = await _read_upload(file, dataset_id)
-    dataset_store.store(dataframe, file_path=path, dataset_id=dataset_id)
+    
     analysis = analyse_dataset(dataframe)
+    quality_score = analysis.get("quality", {}).get("quality_score")
+    issues = analysis.get("issues", [])
+    
+    dataset_store.store(
+        dataframe,
+        file_path=path,
+        dataset_id=dataset_id,
+        status="analyzed",
+        quality_score=quality_score,
+        issues=issues
+    )
     
     from app.services.business_insight_engine import generate_business_context
     from app.services.openai_service import generate_ai_insights

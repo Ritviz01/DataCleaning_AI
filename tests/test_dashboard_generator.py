@@ -109,7 +109,7 @@ def test_dashboard_endpoint_success():
     })
     ds_id = save_dataset(df)
     
-    with patch("app.services.dashboard_json_generator.generate_spec") as mock_gen_spec:
+    with patch("app.services.dashboard_service.generate_spec") as mock_gen_spec:
         mock_gen_spec.return_value = {
             "title": "Mock Laptops Dashboard",
             "pages": [

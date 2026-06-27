@@ -1,4 +1,85 @@
+def recommend_dashboard_sections(domain: str, schema: list[dict]) -> list[dict]:
+    """Determines which dashboard pages/sections should exist based on the dataset domain and column schema."""
+    col_names = [col.get("column_name", "").lower().strip() for col in schema]
+    
+    sections = []
+    
+    # 1. Overview is always recommended
+    sections.append({
+        "name": "Overview",
+        "description": f"High-level executive overview of the {domain} dataset."
+    })
+    
+    # 2. Add domain-specific sections
+    domain_lower = domain.lower()
+    
+    # Financial/Revenue/Salary Section
+    has_finance = any(k in col_names for k in ["price", "amount", "cost", "revenue", "sales", "profit", "salary", "wage", "compensation", "income"])
+    if has_finance:
+        name = "Revenue & Sales" if domain_lower in ["sales", "ecommerce", "finance"] else "Financial Analysis"
+        if domain_lower == "hr":
+            name = "Salary & Compensation"
+        sections.append({
+            "name": name,
+            "description": "Detailed financial performance and monetary metrics."
+        })
+        
+    # Audience/Demographics Section
+    has_audience = any(k in col_names for k in ["customer", "client", "employee", "student", "patient", "user", "visitor", "member", "subscriber", "staff", "worker", "age", "gender"])
+    if has_audience:
+        name = "Demographics"
+        if domain_lower == "hr":
+            name = "Workforce Demographics"
+        elif domain_lower == "education":
+            name = "Student Profiles"
+        elif domain_lower == "healthcare":
+            name = "Patient Demographics"
+        elif domain_lower in ["sales", "ecommerce"]:
+            name = "Customer Analysis"
+        sections.append({
+            "name": name,
+            "description": "Analysis of profiles, demographics, and segments."
+        })
+        
+    # Items/Products/Courses/Diseases Section
+    has_items = any(k in col_names for k in ["product", "item", "brand", "course", "class", "subject", "disease", "illness", "diagnosis", "symptom"])
+    if has_items:
+        name = "Products & Inventory"
+        if domain_lower == "education":
+            name = "Course Catalog"
+        elif domain_lower == "healthcare":
+            name = "Diseases & Diagnoses"
+        sections.append({
+            "name": name,
+            "description": "Detailed metrics per category or item type."
+        })
+        
+    # Temporal Trends Section
+    has_time = any(k in col_names for k in ["date", "time", "year", "month", "day", "timestamp", "created_at"])
+    if has_time:
+        sections.append({
+            "name": "Trends & History",
+            "description": "Visual history and trends over time."
+        })
+        
+    # Fallback/General Page if no other pages were recommended
+    if len(sections) == 1:
+        sections.append({
+            "name": "Performance Analysis",
+            "description": "Analysis of key categories and categorical distributions."
+        })
+        
+    # Distributions & Statistical Relationships Page
+    sections.append({
+        "name": "Statistical Distributions",
+        "description": "Probability distributions, range analyses, and statistical outliers."
+    })
+    
+    return sections
+
+
 def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) -> list:
+    """Legacy function to recommend charts for compatibility."""
     col_names = []
     if df is not None:
         col_names = [c.lower().strip() for c in df.columns]
@@ -7,7 +88,6 @@ def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) 
         
     recommendations = []
     
-    # 1. Category / Industry charts
     if any("industry" in c or "category" in c for c in col_names) or dataset_type == "industry_lookup_dataset":
         recommendations.append({
             "chart_name": "Industry Distribution",
@@ -31,7 +111,6 @@ def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) 
             "description": "Breakdown of category groups."
         })
 
-    # 2. Demographic charts
     if "age" in col_names:
         recommendations.append({
             "chart_name": "Age Distribution",
@@ -41,7 +120,6 @@ def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) 
             "description": "Displays the age demographics of enrolled students."
         })
 
-    # 3. Course popularity
     if "course" in col_names:
         recommendations.append({
             "chart_name": "Course Popularity",
@@ -51,7 +129,6 @@ def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) 
             "description": "Ranks courses by the total number of student enrollments."
         })
 
-    # 4. Enrollment Trends
     if any("date" in c or "enroll" in c for c in col_names):
         recommendations.append({
             "chart_name": "Enrollment Trends",
@@ -61,7 +138,6 @@ def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) 
             "description": "Tracks student enrollments over time to show growth patterns."
         })
 
-    # 5. Price-based charts
     has_price = any(c in col_names for c in ["price", "amount", "cost"])
     if has_price:
         price_col = next((c for c in col_names if c in ["price", "amount", "cost"]), "price")
@@ -89,7 +165,6 @@ def generate_dashboard_recommendations(dataset_type: str, df=None, schema=None) 
                 "description": "Analyzes the correlation between system memory size and retail price."
             })
 
-    # 6. Financial charts (only if revenue/sales exist)
     if any(c in col_names for c in ["revenue", "sales", "profit"]):
         recommendations.append({
             "chart_name": "Sales Analysis",

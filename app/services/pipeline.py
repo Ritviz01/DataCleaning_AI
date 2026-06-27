@@ -23,11 +23,25 @@ def analyse_dataset(df: pl.DataFrame) -> dict[str, Any]:
     Keeping analysis separate from cleaning is intentional: a caller can review
     every proposed change before it is applied.
     """
-    metadata = generate_metadata(df)
+    # Pass 1: Initial schema type inference
     schema = infer_schema(df)
+    
+    # Classify the dataset domain
+    from app.services.dashboard_domain_detector import detect_domain
+    domain = detect_domain(df, schema)
+    
+    # Pass 2: Re-run semantic type detection with the classified domain
+    schema = infer_schema(df, domain=domain)
+    
+    metadata = generate_metadata(df)
+    metadata["domain"] = domain
+    
     profile = profile_dataset(df)
     type_suggestions = infer_better_types(df, schema)
-    issues = detect_issues(df)
+    
+    # Pass domain down to issues
+    issues = detect_issues(df, domain=domain)
+    
     quality = calculate_quality_score(profile, issues)
     recommendations = generate_recommendations(issues, schema, type_suggestions)
 
@@ -39,7 +53,7 @@ def analyse_dataset(df: pl.DataFrame) -> dict[str, Any]:
         "issues": issues,
         "recommendations": recommendations,
         "type_suggestions": type_suggestions,
-        "insights": generate_dataset_insights(df, schema, metadata, quality, issues),
+        "insights": generate_dataset_insights(df, schema, metadata, quality, issues, domain=domain),
     }
 
 
