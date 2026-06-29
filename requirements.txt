@@ -12,3 +12,4 @@ openai
 sqlalchemy>=2.0.0
 aiosqlite
 greenlet
+pyyaml
